@@ -40,7 +40,10 @@ async def lifespan(app: FastAPI):
     init_db()
     _get_detector()
     _thresholds = load_thresholds()
+    from llm import synthesizer as _llm
+
     print(f"[api] detector={_detector.model_name}:{_detector.model_version} thresholds={_thresholds}")
+    print(f"[api] llm_enabled={_llm.enabled()} model={_llm.model_name()} key_set={bool(os.getenv('GEMINI_API_KEY'))}")
     yield
 
 
@@ -57,8 +60,10 @@ def get_db():
 
 @app.get("/health")
 def health():
+    from llm import synthesizer as _llm
+
     d = _get_detector()
-    return {"status": "ok", "model": getattr(d, "model_version", "unloaded")}
+    return {"status": "ok", "model": getattr(d, "model_version", "unloaded"), "llm_enabled": _llm.enabled(), "llm_model": _llm.model_name()}
 
 
 @app.post("/flows/ingest", response_model=IngestOut)

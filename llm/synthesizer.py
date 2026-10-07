@@ -17,12 +17,18 @@ def enabled() -> bool:
     return os.getenv("LLM_ENABLED", "false").lower() == "true" and bool(os.getenv("GEMINI_API_KEY"))
 
 
+def model_name() -> str:
+    # accept MODEL= as alias (user .env used MODEL=), else GEMINI_MODEL, else default
+    return os.getenv("GEMINI_MODEL") or os.getenv("MODEL") or "gemini-2.0-flash-lite"
+
+
 def synthesize(event: dict, evidence: list[dict]) -> dict | None:
     """Try Gemini, return {findings, confidence, uncertainties} or None on any failure."""
     if not enabled():
+        print("[llm] skipped: LLM_ENABLED!=true or GEMINI_API_KEY missing")
         return None
     key = os.getenv("GEMINI_API_KEY", "")
-    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+    model = model_name()
     prompt = (
         "You are a SOC assistant. Given ANOMALY EVENT and TOOL OUTPUTS (facts), "
         "write 2-4 grounded findings. Rules: cite tool names, separate observed facts "

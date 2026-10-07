@@ -138,7 +138,7 @@ def start_investigation(event_id: str, db: Session = Depends(get_db)):
     )
     # Optional LLM enhancement (quota-safe: stub kept on any failure/off)
     try:
-        from llm.synthesizer import synthesize
+        from llm.synthesizer import synthesize, model_name
 
         llm_out = synthesize(
             {"event_id": ev.event_id, "anomaly_score": ev.anomaly_score},
@@ -148,7 +148,7 @@ def start_investigation(event_id: str, db: Session = Depends(get_db)):
             rep_json["findings"] = llm_out.get("findings") or rep_json["findings"]
             rep_json["confidence"] = llm_out.get("confidence", rep_json["confidence"])
             rep_json["uncertainties"] = llm_out.get("uncertainties", rep_json["uncertainties"])
-            rep_json["llm_model"] = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+            rep_json["llm_model"] = model_name()
     except Exception as e:
         print(f"[api] llm enhance skipped: {e}")
     repo.save_report(db, new_report_doc(inv_id, rep_json))

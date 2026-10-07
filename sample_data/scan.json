@@ -1,0 +1,1 @@
+{"flow_id": "FLOW-0003", "src_ip": "192.168.1.66", "dst_ip": "10.0.0.99", "src_port": 51111, "dst_port": 22, "protocol": "TCP", "duration": 30.0, "orig_bytes": 1500, "resp_bytes": 800, "orig_pkts": 60, "resp_pkts": 10}

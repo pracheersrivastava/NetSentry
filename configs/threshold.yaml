@@ -1,0 +1,5 @@
+investigate_at: 0.85
+monitor_at: 0.60
+# Score < monitor_at -> store only, no event
+# monitor_at <= score < investigate_at -> anomaly_events status=monitoring
+# score >= investigate_at -> anomaly_events status=open (dashboard prioritizes)

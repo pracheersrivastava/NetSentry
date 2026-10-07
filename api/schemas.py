@@ -54,3 +54,29 @@ class IngestIn(BaseModel):
 class PredictIn(BaseModel):
     flow: FlowIn
     ctx: dict | None = None
+
+
+class InvestigationOut(BaseModel):
+    investigation_id: str
+    event_id: str
+    state: str
+    started_at: datetime
+    completed_at: datetime | None = None
+    outcome: str | None = None
+
+
+class EvidenceOut(BaseModel):
+    evidence_id: str
+    investigation_id: str
+    source_tool: str
+    evidence_type: str
+    payload: dict
+    timestamp: datetime
+
+
+class ReportOut(BaseModel):
+    report_id: str
+    investigation_id: str
+    report_json: dict
+    generated_at: datetime
+    reviewer_status: str

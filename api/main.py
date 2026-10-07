@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 
 from database.db import init_db, SessionLocal
 from database import repository as repo
-from api.schemas import FlowIn, PredictOut, AnomalyOut, IngestOut
+from api.schemas import FlowIn, PredictOut, AnomalyOut, IngestOut, InvestigationOut, EvidenceOut, ReportOut
 from features.flow_features import extract_features
 from ml.predict import get_detector
 from events.threshold import load_thresholds
 from events.event_manager import build_event
 from capture.normalizer import normalize
+from agent.stub_agent import run_stub_investigation
+from reports.generator import build_report, new_report_doc
 
 _detector = None
 _thresholds = {"investigate_at": 0.85, "monitor_at": 0.60}
@@ -108,7 +110,50 @@ def model_predict(flow: FlowIn):
     return PredictOut(flow_id=raw.get("flow_id") or "FLOW-TEST", model=res.model, model_version=res.model_version, anomaly_score=res.anomaly_score, prediction=res.prediction, features_used=res.features_used)
 
 
-@app.post("/investigations/{event_id}")
-def start_investigation(event_id: str):
-    # Agent team plugs LangGraph here (Phase 2). Stub keeps API stable.
-    return {"investigation_id": f"INV-{uuid.uuid4().hex[:8].upper()}", "event_id": event_id, "state": "queued", "note": "agent not wired yet (stub)"}
+@app.post("/investigations/{event_id}", response_model=InvestigationOut)
+def start_investigation(event_id: str, db: Session = Depends(get_db)):
+    """Phase 1: deterministic stub (3 tools). Phase 2: LangGraph replaces run_stub_investigation internals."""
+    from fastapi import HTTPException
+
+    if not repo.get_event(db, event_id):
+        raise HTTPException(404, "event not found")
+    inv_id = run_stub_investigation(db, event_id)
+    # Auto-build stub report so dashboard has full chain immediately
+    inv = repo.get_investigation(db, inv_id)
+    ev = repo.get_event(db, event_id)
+    ev_rows = repo.list_evidence(db, inv_id)
+    rep_json = build_report(
+        {"event_id": ev.event_id, "flow_id": ev.flow_id, "anomaly_score": ev.anomaly_score, "model_version": ev.model_version},
+        [{"source_tool": e.source_tool, "payload": e.payload} for e in ev_rows],
+    )
+    repo.save_report(db, new_report_doc(inv_id, rep_json))
+    return InvestigationOut(investigation_id=inv.investigation_id, event_id=inv.event_id, state=inv.state, started_at=inv.started_at, completed_at=inv.completed_at, outcome=inv.outcome)
+
+
+@app.get("/investigations/{investigation_id}", response_model=InvestigationOut)
+def get_investigation(investigation_id: str, db: Session = Depends(get_db)):
+    from fastapi import HTTPException
+
+    r = repo.get_investigation(db, investigation_id)
+    if not r:
+        raise HTTPException(404, "investigation not found")
+    return InvestigationOut(investigation_id=r.investigation_id, event_id=r.event_id, state=r.state, started_at=r.started_at, completed_at=r.completed_at, outcome=r.outcome)
+
+
+@app.get("/investigations/{investigation_id}/evidence", response_model=list[EvidenceOut])
+def get_evidence(investigation_id: str, db: Session = Depends(get_db)):
+    rows = repo.list_evidence(db, investigation_id)
+    return [EvidenceOut(evidence_id=r.evidence_id, investigation_id=r.investigation_id, source_tool=r.source_tool, evidence_type=r.evidence_type, payload=r.payload, timestamp=r.timestamp) for r in rows]
+
+
+@app.get("/reports/{report_id}", response_model=ReportOut)
+def get_report(report_id: str, db: Session = Depends(get_db)):
+    from fastapi import HTTPException
+
+    r = repo.get_report(db, report_id)
+    if not r:
+        # allow lookup by investigation id as convenience
+        r = repo.get_report_by_investigation(db, report_id)
+    if not r:
+        raise HTTPException(404, "report not found")
+    return ReportOut(report_id=r.report_id, investigation_id=r.investigation_id, report_json=r.report_json, generated_at=r.generated_at, reviewer_status=r.reviewer_status)

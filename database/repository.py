@@ -42,3 +42,69 @@ def list_events(s: Session, limit: int = 50, status: str | None = None, min_scor
 
 def get_event(s: Session, event_id: str):
     return s.get(models.AnomalyEvent, event_id)
+
+
+def get_flow(s: Session, flow_id: str):
+    return s.get(models.NetworkFlow, flow_id)
+
+
+def create_investigation(s: Session, inv: dict) -> models.Investigation:
+    obj = models.Investigation(**inv)
+    s.add(obj)
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def get_investigation(s: Session, investigation_id: str):
+    return s.get(models.Investigation, investigation_id)
+
+
+def finish_investigation(s: Session, investigation_id: str, outcome: str) -> models.Investigation | None:
+    from datetime import datetime, timezone
+
+    obj = s.get(models.Investigation, investigation_id)
+    if obj is None:
+        return None
+    obj.state = "done"
+    obj.completed_at = datetime.now(timezone.utc)
+    obj.outcome = outcome
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def add_evidence(s: Session, ev: dict) -> models.Evidence:
+    obj = models.Evidence(**ev)
+    s.add(obj)
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def list_evidence(s: Session, investigation_id: str):
+    return s.query(models.Evidence).filter(models.Evidence.investigation_id == investigation_id).order_by(models.Evidence.timestamp).all()
+
+
+def add_tool_call(s: Session, call: dict) -> models.ToolCall:
+    obj = models.ToolCall(**call)
+    s.add(obj)
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def save_report(s: Session, rep: dict) -> models.Report:
+    obj = models.Report(**rep)
+    s.add(obj)
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def get_report(s: Session, report_id: str):
+    return s.get(models.Report, report_id)
+
+
+def get_report_by_investigation(s: Session, investigation_id: str):
+    return s.query(models.Report).filter(models.Report.investigation_id == investigation_id).first()

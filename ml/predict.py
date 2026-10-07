@@ -17,7 +17,11 @@ def get_detector() -> BaseDetector:
         try:
             from .real import SklearnDetector  # lazy import, needs sklearn
 
-            return SklearnDetector(model_path)
+            det = SklearnDetector(model_path)
+            print(f"[ml] loaded real model {model_path} version={det.model_version}")
+            return det
         except Exception as e:
             print(f"[ml] WARN: failed to load {model_path}: {e}, falling back to stub")
-    return StubDetector()
+    stub = StubDetector()
+    print(f"[ml] using stub {stub.model_version} (no artifact at {model_path})")
+    return stub

@@ -108,3 +108,62 @@ def get_report(s: Session, report_id: str):
 
 def get_report_by_investigation(s: Session, investigation_id: str):
     return s.query(models.Report).filter(models.Report.investigation_id == investigation_id).first()
+
+
+def find_event_for_flow(s: Session, flow_id: str):
+    """Dedupe: re-ingesting same flow_id reuses existing event instead of new ANM."""
+    return s.query(models.AnomalyEvent).filter(models.AnomalyEvent.flow_id == flow_id).order_by(models.AnomalyEvent.created_at.desc()).first()
+
+
+def update_event_score(s: Session, event_id: str, score: float, model_version: str):
+    obj = s.get(models.AnomalyEvent, event_id)
+    if obj is None:
+        return None
+    obj.anomaly_score = score
+    obj.model_version = model_version
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def set_event_status(s: Session, event_id: str, status: str):
+    obj = s.get(models.AnomalyEvent, event_id)
+    if obj is None:
+        return None
+    obj.status = status
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def list_investigations(s: Session, limit: int = 50):
+    return s.query(models.Investigation).order_by(models.Investigation.started_at.desc()).limit(limit).all()
+
+
+def get_investigation_by_event(s: Session, event_id: str):
+    return s.query(models.Investigation).filter(models.Investigation.event_id == event_id).order_by(models.Investigation.started_at.desc()).first()
+
+
+def set_report_review(s: Session, report_id: str, status: str):
+    obj = s.get(models.Report, report_id)
+    if obj is None:
+        return None
+    obj.reviewer_status = status
+    s.commit()
+    s.refresh(obj)
+    return obj
+
+
+def upsert_model_version(s: Session, model_id: str, version: str, artifact_path: str = "", metrics: dict | None = None):
+    obj = s.get(models.ModelVersion, model_id)
+    if obj is None:
+        obj = models.ModelVersion(model_id=model_id, version=version, training_data="", metrics=metrics or {}, artifact_path=artifact_path)
+        s.add(obj)
+    else:
+        obj.version = version
+        obj.artifact_path = artifact_path
+        if metrics is not None:
+            obj.metrics = metrics
+    s.commit()
+    s.refresh(obj)
+    return obj

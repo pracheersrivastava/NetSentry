@@ -1,0 +1,14 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: sqlite:///./netsentry.db
+    volumes:
+      - ../netsentry.db:/app/netsentry.db
+      - ../ml/models:/app/ml/models

@@ -1,0 +1,32 @@
+# --- NetSentry local reference (do not commit) ---
+NetSentry_AI_Project_Report.docx
+report_dump.txt
+/reference_docs/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Data / models / local telemetry (keep repo small) ---
+*.pcap
+*.pcapng
+*.parquet
+*.csv
+ml/models/*.joblib
+ml/models/*.pt
+*.sqlite
+*.db
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

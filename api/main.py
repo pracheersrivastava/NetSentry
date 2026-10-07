@@ -1,7 +1,12 @@
 """FastAPI backend — Option A (in-process model). Single container demo."""
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+
+from dotenv import load_dotenv
+
+load_dotenv()  # loads .env at repo root (GEMINI_API_KEY, DATABASE_URL, MODEL_PATH)
 
 from fastapi import FastAPI, Depends, Query
 from sqlalchemy.orm import Session
@@ -126,6 +131,21 @@ def start_investigation(event_id: str, db: Session = Depends(get_db)):
         {"event_id": ev.event_id, "flow_id": ev.flow_id, "anomaly_score": ev.anomaly_score, "model_version": ev.model_version},
         [{"source_tool": e.source_tool, "payload": e.payload} for e in ev_rows],
     )
+    # Optional LLM enhancement (quota-safe: stub kept on any failure/off)
+    try:
+        from llm.synthesizer import synthesize
+
+        llm_out = synthesize(
+            {"event_id": ev.event_id, "anomaly_score": ev.anomaly_score},
+            [{"source_tool": e.source_tool, "payload": e.payload} for e in ev_rows],
+        )
+        if llm_out:
+            rep_json["findings"] = llm_out.get("findings") or rep_json["findings"]
+            rep_json["confidence"] = llm_out.get("confidence", rep_json["confidence"])
+            rep_json["uncertainties"] = llm_out.get("uncertainties", rep_json["uncertainties"])
+            rep_json["llm_model"] = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+    except Exception as e:
+        print(f"[api] llm enhance skipped: {e}")
     repo.save_report(db, new_report_doc(inv_id, rep_json))
     return InvestigationOut(investigation_id=inv.investigation_id, event_id=inv.event_id, state=inv.state, started_at=inv.started_at, completed_at=inv.completed_at, outcome=inv.outcome)
 

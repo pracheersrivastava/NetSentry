@@ -18,11 +18,11 @@ class Base(DeclarativeBase):
 class NetworkFlow(Base):
     __tablename__ = "network_flows"
     flow_id: Mapped[str] = mapped_column(String, primary_key=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     src_ip: Mapped[str] = mapped_column(String, index=True)
     dst_ip: Mapped[str] = mapped_column(String, index=True)
     src_port: Mapped[int] = mapped_column(Integer)
-    dst_port: Mapped[int] = mapped_column(Integer)
+    dst_port: Mapped[int] = mapped_column(Integer, index=True)
     protocol: Mapped[str] = mapped_column(String)
     duration: Mapped[float] = mapped_column(Float)
     orig_bytes: Mapped[int] = mapped_column(Integer)
@@ -35,19 +35,19 @@ class NetworkFlow(Base):
 class AnomalyEvent(Base):
     __tablename__ = "anomaly_events"
     event_id: Mapped[str] = mapped_column(String, primary_key=True)
-    flow_id: Mapped[str] = mapped_column(String, ForeignKey("network_flows.flow_id"))
-    anomaly_score: Mapped[float] = mapped_column(Float)
+    flow_id: Mapped[str] = mapped_column(String, ForeignKey("network_flows.flow_id"), index=True)
+    anomaly_score: Mapped[float] = mapped_column(Float, index=True)
     model_version: Mapped[str] = mapped_column(String)
-    status: Mapped[str] = mapped_column(String, default="open")  # open|monitoring|investigating|closed
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    status: Mapped[str] = mapped_column(String, default="open", index=True)  # open|monitoring|investigating|closed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class Investigation(Base):
     __tablename__ = "investigations"
     investigation_id: Mapped[str] = mapped_column(String, primary_key=True)
-    event_id: Mapped[str] = mapped_column(String, ForeignKey("anomaly_events.event_id"))
-    state: Mapped[str] = mapped_column(String, default="queued")  # queued|running|done|failed
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    event_id: Mapped[str] = mapped_column(String, ForeignKey("anomaly_events.event_id"), index=True)
+    state: Mapped[str] = mapped_column(String, default="queued", index=True)  # queued|running|done|failed
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -55,17 +55,17 @@ class Investigation(Base):
 class Evidence(Base):
     __tablename__ = "evidence"
     evidence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    investigation_id: Mapped[str] = mapped_column(String, ForeignKey("investigations.investigation_id"))
-    source_tool: Mapped[str] = mapped_column(String)
+    investigation_id: Mapped[str] = mapped_column(String, ForeignKey("investigations.investigation_id"), index=True)
+    source_tool: Mapped[str] = mapped_column(String, index=True)
     evidence_type: Mapped[str] = mapped_column(String)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class ToolCall(Base):
     __tablename__ = "tool_calls"
     call_id: Mapped[str] = mapped_column(String, primary_key=True)
-    investigation_id: Mapped[str] = mapped_column(String, ForeignKey("investigations.investigation_id"))
+    investigation_id: Mapped[str] = mapped_column(String, ForeignKey("investigations.investigation_id"), index=True)
     tool_name: Mapped[str] = mapped_column(String)
     arguments: Mapped[dict] = mapped_column(JSON, default=dict)
     result: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -75,10 +75,10 @@ class ToolCall(Base):
 class Report(Base):
     __tablename__ = "reports"
     report_id: Mapped[str] = mapped_column(String, primary_key=True)
-    investigation_id: Mapped[str] = mapped_column(String, ForeignKey("investigations.investigation_id"))
+    investigation_id: Mapped[str] = mapped_column(String, ForeignKey("investigations.investigation_id"), index=True)
     report_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    reviewer_status: Mapped[str] = mapped_column(String, default="pending")
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    reviewer_status: Mapped[str] = mapped_column(String, default="pending", index=True)
 
 
 class ModelVersion(Base):

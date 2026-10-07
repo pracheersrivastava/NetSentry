@@ -1,4 +1,5 @@
 services:
+  # Default: SQLite demo (no extra infra). Compose up just works.
   api:
     build:
       context: ..
@@ -8,7 +9,28 @@ services:
     env_file:
       - ../.env
     environment:
-      DATABASE_URL: sqlite:///./netsentry.db
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./netsentry.db}
     volumes:
       - ../netsentry.db:/app/netsentry.db
       - ../ml/models:/app/ml/models
+    depends_on:
+      db:
+        condition: service_started
+        required: false
+
+  # Scale profile: Postgres. Run: docker compose --profile pg up --build
+  # with DATABASE_URL=postgresql+psycopg://netsentry:netsentry@db:5432/netsentry in .env
+  db:
+    image: postgres:16-alpine
+    profiles: ["pg"]
+    environment:
+      POSTGRES_USER: netsentry
+      POSTGRES_PASSWORD: netsentry
+      POSTGRES_DB: netsentry
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pgdata:

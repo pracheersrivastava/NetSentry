@@ -167,3 +167,20 @@ def upsert_model_version(s: Session, model_id: str, version: str, artifact_path:
     s.commit()
     s.refresh(obj)
     return obj
+
+
+def bulk_upsert_flows_events(s: Session, raws: list[dict], events: list[dict | None]) -> None:
+    """Scale path: ONE commit for N flows + M events (live/batch). Single ingest keeps per-row commit."""
+    for raw in raws:
+        obj = s.get(models.NetworkFlow, raw["flow_id"])
+        if obj is None:
+            s.add(models.NetworkFlow(**raw))
+        else:
+            for k, v in raw.items():
+                setattr(obj, k, v)
+    for ev in events:
+        if ev is None:
+            continue
+        if s.get(models.AnomalyEvent, ev["event_id"]) is None:
+            s.add(models.AnomalyEvent(**ev))
+    s.commit()

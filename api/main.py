@@ -116,12 +116,33 @@ def ingest_flow(flow: FlowIn, db: Session = Depends(get_db)):
 
 @app.post("/flows/batch", response_model=list[IngestOut])
 def ingest_batch(flows: list[FlowIn], db: Session = Depends(get_db)):
-    """Live-capture path: 1 HTTP call for N flows (same per-flow logic, no API change later)."""
-    out = []
-    for f in flows[:500]:  # cap protects demo + prod from 10k-row bombs
-        flow_id, res, event_id = _score_and_store(f, db)
-        out.append(IngestOut(flow_id=flow_id, anomaly_score=res.anomaly_score, prediction=res.prediction, event_id=event_id))
-    return out
+    """Live-capture path: 1 HTTP call for N flows, ONE commit (scale-safe). Same scoring as single ingest."""
+    from events.event_manager import build_event as _build
+
+    det = _get_detector()
+    raws, events, out_meta = [], [], []
+    for i, f in enumerate(flows[:500]):  # cap protects demo + prod from 10k-row bombs
+        raw = normalize(f.model_dump(exclude_none=False), i)
+        if not raw["flow_id"]:
+            raw["flow_id"] = f"FLOW-{uuid.uuid4().hex[:8].upper()}"
+        if not raw.get("timestamp"):
+            raw["timestamp"] = datetime.now(timezone.utc)
+        feats = extract_features(raw, {})
+        res = det.predict(feats)
+        raw["features"] = feats
+        raws.append(raw)
+        # keep current dedupe semantic: reuse existing event id when present
+        existing = repo.find_event_for_flow(db, raw["flow_id"])
+        if existing:
+            repo.update_event_score(db, existing.event_id, res.anomaly_score, res.model_version)
+            out_meta.append((raw["flow_id"], res, existing.event_id))
+        else:
+            ev = _build(raw["flow_id"], res.anomaly_score, res.model_version, _thresholds)
+            events.append(ev)
+            out_meta.append((raw["flow_id"], res, ev["event_id"] if ev else None))
+    # single transaction for all new rows
+    repo.bulk_upsert_flows_events(db, raws, events)
+    return [IngestOut(flow_id=fid, anomaly_score=r.anomaly_score, prediction=r.prediction, event_id=eid) for fid, r, eid in out_meta]
 
 
 @app.get("/flows")

@@ -326,8 +326,16 @@ erDiagram
 4. **Configure environment variables:**
    ```bash
    cp configs/.env.example .env
-   # Edit .env with your LLM API keys (e.g., GEMINI_API_KEY / OPENAI_API_KEY) and DB settings
+   # Edit .env with your LLM API keys (e.g., GEMINI_API_KEY) and DB settings
+   # LLM_ENABLED=false for offline demo, true for Gemini synthesis
    ```
+
+### 0. One-command demo reset (use this before every demo)
+
+```bash
+python scripts/seed.py
+# seeds 3 flows -> 2 events (1 monitor ANM-xxx, 1 open ANM-xxx)
+```
 
 ---
 
@@ -363,7 +371,19 @@ Open [http://localhost:8501](http://localhost:8501) to explore live monitoring, 
 ### 4. Running with Docker Compose
 
 ```bash
-docker-compose up --build
+docker compose -f docker/docker-compose.yml up --build
+# needs Docker installed; API at http://localhost:8000
+# (local dev without Docker: uvicorn api.main:app --port 8000)
+```
+
+### 5. Demo script (3 minutes)
+
+```bash
+python scripts/seed.py
+uvicorn api.main:app --port 8000          # terminal 1
+streamlit run dashboard/app.py            # terminal 2
+# browser 1: http://localhost:8000/docs -> POST /investigations/{ANM-xxx from seed}
+# browser 2: http://localhost:8501 -> Anomalies -> Investigate -> Investigations -> Report
 ```
 
 ---

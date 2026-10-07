@@ -20,7 +20,9 @@ def build_report(event: dict, evidence: list[dict]) -> dict:
     by_tool = {e["source_tool"]: e["payload"] for e in evidence}
     traffic = by_tool.get("analyze_connections", {})
     history = by_tool.get("search_historical_traffic", {})
+    net_ev = by_tool.get("get_network_event", {})
     score = float(event.get("anomaly_score", 0))
+    bps = (net_ev.get("flow") or {}).get("features", {}).get("bytes_per_sec", 0)
 
     observed = [
         f"flow {event.get('flow_id')} scored {score} ({event.get('model_version')})",
@@ -28,6 +30,8 @@ def build_report(event: dict, evidence: list[dict]) -> dict:
         f"history: {history.get('past_flow_count', 0)} past flows from source",
     ]
     findings = []
+    if bps and bps > 50000:
+        findings.append(f"high-volume burst observed: {bps:.0f} bytes/sec in triggering flow (observed, not proven malicious)")
     if traffic.get("scan_like"):
         findings.append("port/host diversity suggests scan-like behavior (observed, not proven malicious)")
     if score >= 0.85 and history.get("past_flow_count", 0) <= 2:

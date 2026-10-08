@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ArrowRight,
   FileCheck2,
@@ -23,25 +24,31 @@ import {
   date,
   time,
 } from "./components";
+import { decisionFromScore, flowHeadline, severityLabel } from "./copy";
+import type { Thresholds } from "./copy";
 
-const colors = ["#da1e28", "#ff8389", "#f1c21b", "#24a148"];
+const colors = ["#da1e28", "#ff8389", "#f1c21b", "#78a9ff"];
 export function AnomalyTable({
   events,
   flows,
   onSelect,
+  thresholds,
+  empty,
 }: {
   events: Anomaly[];
   flows: Flow[];
   onSelect: (e: Anomaly) => void;
+  thresholds: Thresholds;
+  empty?: ReactNode;
 }) {
   return events.length ? (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Event / flow</th>
+            <th>Traffic</th>
             <th>Source → destination</th>
-            <th>Priority</th>
+            <th>Severity</th>
             <th>Score</th>
             <th>Status</th>
             <th />
@@ -51,12 +58,24 @@ export function AnomalyTable({
           {events.map((e) => {
             const f = flows.find((f) => f.flow_id === e.flow_id);
             return (
-              <tr key={e.event_id}>
+              <tr
+                key={e.event_id}
+                className="clickable-row"
+                tabIndex={0}
+                aria-label={`Open ${e.event_id}`}
+                onClick={() => onSelect(e)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    onSelect(e);
+                  }
+                }}
+              >
                 <td>
-                  <button className="row-link" onClick={() => onSelect(e)}>
-                    {e.event_id}
-                  </button>
-                  <small>{e.flow_id}</small>
+                  <span className="row-link">
+                    {f ? flowHeadline(f) : e.event_id}
+                  </span>
+                  <small>{e.event_id}</small>
                 </td>
                 <td className="mono">
                   {f?.src_ip ?? "Unavailable"}
@@ -67,24 +86,23 @@ export function AnomalyTable({
                   </small>
                 </td>
                 <td>
-                  <Badge value={priority(e.anomaly_score)} />
+                  <Badge value={priority(e.anomaly_score, thresholds)} kind="severity" />
                 </td>
                 <td>
-                  <span className={`score ${priority(e.anomaly_score)}`}>
+                  <span className={`score ${priority(e.anomaly_score, thresholds)}`}>
                     {e.anomaly_score.toFixed(2)}
                   </span>
+                  <small>
+                    {decisionFromScore(e.anomaly_score, thresholds)}
+                  </small>
                 </td>
                 <td>
                   <Badge value={e.status} />
                 </td>
                 <td>
-                  <button
-                    className="table-open"
-                    aria-label={`Open ${e.event_id}`}
-                    onClick={() => onSelect(e)}
-                  >
+                  <span className="table-open" aria-hidden="true">
                     <ArrowRight size={16} />
-                  </button>
+                  </span>
                 </td>
               </tr>
             );
@@ -93,7 +111,7 @@ export function AnomalyTable({
       </table>
     </div>
   ) : (
-    <Empty title="No anomalies in this window" />
+    (empty ?? <Empty title="No anomalies in this window" />)
   );
 }
 
@@ -109,9 +127,10 @@ export default function Overview({
   onPriority: (p: string) => void;
 }) {
   const active = data.anomalies.filter((a) => a.status !== "closed");
+  const thresholds = data.model.thresholds;
   const sev = ["critical", "high", "medium", "low"].map((name) => ({
     name,
-    value: active.filter((a) => priority(a.anomaly_score) === name).length,
+    value: active.filter((a) => priority(a.anomaly_score, thresholds) === name).length,
   }));
   const timestamps = data.flows.map((f) => date(f.timestamp).getTime());
   const end = Date.now(),
@@ -166,8 +185,9 @@ export default function Overview({
           </div>
         ))}
         <div className="score-policy">
-          <span>Detection policy</span>
-          <strong><b>{data.model.thresholds.monitor_at.toFixed(2)}</b> monitor <i /> <b>{data.model.thresholds.investigate_at.toFixed(2)}</b> investigate</strong>
+          <span>Score bands</span>
+          <strong><b>{thresholds.monitor_at.toFixed(2)}</b> monitor <i /> <b>{thresholds.investigate_at.toFixed(2)}</b> investigate</strong>
+          <small>Full explanation is on Model.</small>
         </div>
       </section>
       <div className="overview-grid">
@@ -191,7 +211,7 @@ export default function Overview({
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={activity}
-                margin={{ top: 15, right: 15, left: -25, bottom: 0 }}
+                margin={{ top: 12, right: 8, left: 0, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="flowFill" x1="0" y1="0" x2="0" y2="1">
@@ -258,21 +278,16 @@ export default function Overview({
             </span>
           </div>
         </Panel>
-        <Panel title="Open signal" meta={`${active.length} active · ${sev[0].value} critical`}>
+        <Panel title="Signals by severity" meta={`${active.length} open · ${sev[0].value} critical · UI severity bands`}>
           <div className="severity-ledger">
             {sev.map((s, i) => (
               <button key={s.name} onClick={() => onPriority(s.name)}>
                 <i style={{ background: colors[i] }} />
-                <span>{humanPriority(s.name)}</span>
+                <span>{severityLabel(s.name)}</span>
                 <div className="severity-track"><b style={{ width: `${active.length ? Math.max(3, (s.value / active.length) * 100) : 0}%`, background: colors[i] }} /></div>
                 <strong>{s.value}</strong>
               </button>
             ))}
-            <div className="score-ruler">
-              <div className="ruler-track"><i /><i /></div>
-              <div className="ruler-values"><span>0.00</span><b>{data.model.thresholds.monitor_at.toFixed(2)}</b><b>{data.model.thresholds.investigate_at.toFixed(2)}</b><span>1.00</span></div>
-              <div className="ruler-labels"><span>Store</span><span>Monitor</span><span>Investigate</span></div>
-            </div>
           </div>
         </Panel>
       </div>
@@ -290,6 +305,18 @@ export default function Overview({
             events={data.anomalies.slice(0, 5)}
             flows={data.flows}
             onSelect={onSelect}
+            thresholds={thresholds}
+            empty={
+              <Empty
+                title="No anomalies yet"
+                text="Import sample_data/demo_flows.jsonl from Import."
+                action={
+                  <button className="button primary" onClick={() => onNavigate("Import")}>
+                    Go to Import
+                  </button>
+                }
+              />
+            }
           />
         </Panel>
         <Panel
@@ -312,7 +339,7 @@ export default function Overview({
               },
               {
                 icon: FileCheck2,
-                title: "Reports",
+                title: "Report",
                 label: `${data.investigations.filter((i) => i.state === "done").length} reports generated`,
                 tone: "blue",
               },
@@ -320,13 +347,7 @@ export default function Overview({
               <button
                 key={s.title}
                 onClick={() =>
-                  onNavigate(
-                    i === 0
-                      ? "Anomalies"
-                      : i === 1
-                        ? "Investigations"
-                        : "Reports",
-                  )
+                  onNavigate(i === 0 ? "Anomalies" : "Cases")
                 }
               >
                 <span className={`pipeline-icon ${s.tone}`}>
@@ -340,20 +361,11 @@ export default function Overview({
               </button>
             ))}
           </div>
-          <div className="threshold-note">
-            <span>Detection boundaries</span>
-            <div>
-              <strong>{data.model.thresholds.monitor_at.toFixed(2)}</strong>
-              <span>Monitor</span>
-              <strong>{data.model.thresholds.investigate_at.toFixed(2)}</strong>
-              <span>Investigate</span>
-            </div>
-          </div>
+          <p className="threshold-note">
+            Score bands are set by the detector. Open Model for the full explanation.
+          </p>
         </Panel>
       </div>
     </>
   );
-}
-function humanPriority(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }

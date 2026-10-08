@@ -12,7 +12,10 @@ from .stub import StubDetector
 
 
 def get_detector() -> BaseDetector:
-    model_path = os.getenv("MODEL_PATH", "ml/models/isolation_forest_v1.joblib")
+    model_path = os.getenv(
+        "MODEL_PATH",
+        "ml/netsentry_ml_outputs/isolation_forest_v1.joblib",
+    )
     if model_path and os.path.exists(model_path):
         try:
             from .real import SklearnDetector  # lazy import, needs sklearn

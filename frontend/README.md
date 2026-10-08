@@ -31,11 +31,11 @@ npm run build
 ## Data and Review
 
 - Live mode is the default. Backend failures display a retryable error, never sample data.
-- Settings exposes an explicit demo switch. Demo changes are in-memory and never call the backend.
+- There is no demo-data switch in the UI. Settings only toggles the 15-second refresh interval. Seed or import flows through the API.
 - Each feed loads at most 500 records. Counts, date filters, charts, and exports refer to that loaded window, not all-time totals. A cap warning appears when a feed reaches 500.
 - Flow scores reflect the currently active detector. Anomaly scores are stored detection scores.
 - The UI displays the active version, including `v0-stub` when no compatible joblib artifact is installed.
-- The backend supplies threshold values. Model controls are read-only because the backend has no threshold-update API.
+- The backend supplies threshold values. The Model screen can score a non-persistent test flow; it has no threshold-update control because the backend has no threshold-update API. Artifact swap checks stay on `POST /model/validate`, not in the analyst console.
 - Investigations execute synchronously on the backend. The UI shows recorded stages after completion, without simulating real-time node progress.
 - Evidence payloads remain inspectable. Newly executed investigations persist initial feature analysis; older cases can legitimately lack this evidence.
 - Report approval/rejection uses the existing reviewer-status API. These are report decisions, not a new true/false-positive incident classification.

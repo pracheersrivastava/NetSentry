@@ -40,3 +40,13 @@ def test_thresholds_and_initial_analysis_are_exposed():
         assert analysis[0]["payload"]["attributions"]
         assert analysis[0]["payload"]["hypotheses"]
         assert client.post(f"/investigations/{event}").json()["investigation_id"] == inv["investigation_id"]
+
+
+def test_model_console_endpoints_expose_active_artifact_and_metrics():
+    with TestClient(app) as client:
+        info = client.get("/model/info").json()
+        metrics = client.get("/model/metrics").json()
+        assert info["artifact"].endswith("isolation_forest_v1.joblib")
+        assert metrics["available"] is True
+        assert metrics["dataset"] == "CIC-IDS2017"
+        assert 0 <= metrics["roc_auc"] <= 1

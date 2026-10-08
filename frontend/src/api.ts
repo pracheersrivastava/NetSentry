@@ -1,4 +1,11 @@
-import type { Snapshot, Investigation, Evidence, Report } from "./types";
+import type {
+  Snapshot,
+  Investigation,
+  Evidence,
+  Report,
+  ModelMetrics,
+  Prediction,
+} from "./types";
 
 export async function request<T>(
   path: string,
@@ -74,3 +81,10 @@ export const review = (id: string, status: string) =>
     `/reports/${encodeURIComponent(id)}/review?status=${status}`,
     { method: "POST" },
   );
+export const predict = (flow: FlowImport) =>
+  request<Prediction>("/model/predict", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(flow),
+  });
+export const modelMetrics = () => request<ModelMetrics>("/model/metrics");

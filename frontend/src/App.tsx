@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  FileText,
   FlaskConical,
   LayoutDashboard,
   LockKeyhole,
@@ -51,36 +50,41 @@ import {
   priority,
   time,
 } from "./components";
+import {
+  anomalySearchText,
+  caseSecondary,
+  decisionFromScore,
+  decisionShort,
+  flowHeadline,
+} from "./copy";
 import Overview, { AnomalyTable } from "./Overview";
 import CaseView from "./CaseView";
 import TrafficAnalytics from "./TrafficAnalytics";
+import ModelWorkbench from "./ModelWorkbench";
 
 const nav = [
   {
-    group: "WORKSPACE",
+    group: "Workspace",
     items: [
       ["Overview", LayoutDashboard],
-      ["Flow Records", Network],
-      ["Import Flows", Upload],
+      ["Flows", Network],
+      ["Import", Upload],
       ["Traffic Analytics", Activity],
     ],
   },
   {
-    group: "DETECTION",
+    group: "Detection",
     items: [
       ["Anomalies", ShieldAlert],
       ["Model", FlaskConical],
     ],
   },
   {
-    group: "INVESTIGATION",
-    items: [
-      ["Investigations", Workflow],
-      ["Reports", FileText],
-    ],
+    group: "Cases",
+    items: [["Cases", Workflow]],
   },
   {
-    group: "SYSTEM",
+    group: "System",
     items: [
       ["API Health", Radio],
       ["Settings", Settings2],
@@ -89,18 +93,30 @@ const nav = [
   },
 ] as const;
 const descriptions: Record<string, string> = {
-  Overview: "Flow scores, detection thresholds, and evidence-led cases.",
-  "Flow Records": "Previously ingested network telemetry and detection signals.",
-  "Import Flows": "Submit normalized flow records to the detector.",
+  Overview: "Imported traffic, anomaly queue, and cases.",
+  Flows: "Imported and scored traffic.",
+  Import: "Submit normalized flow records to the detector.",
   "Traffic Analytics": "Traffic patterns across the loaded telemetry window.",
-  Anomalies: "Prioritize signals. Investigate what matters.",
-  Investigations: "Evidence-led investigation, from signal to assessment.",
-  Reports: "Incident findings ready for analyst review.",
-  Model: "Active detector and detection boundaries.",
+  Anomalies: "Events above the monitor threshold, ready for triage.",
+  Cases: "Evidence, report, and review for each investigation.",
+  Model: "Active detector and how scoring works.",
   "API Health": "Service availability and investigation capabilities.",
   Settings: "Workspace and refresh preferences.",
   "Privacy Policy": "How this self-hosted console handles telemetry.",
 };
+const pageTitles: Record<string, string> = {
+  Overview: "Security overview",
+  Flows: "Flows",
+  Import: "Import flows",
+  "Traffic Analytics": "Traffic analytics",
+  Anomalies: "Anomalies",
+  Cases: "Cases",
+  Model: "Model",
+  "API Health": "API health",
+  Settings: "Settings",
+  "Privacy Policy": "Privacy policy",
+};
+type CaseTab = "evidence" | "report" | "review";
 
 async function readFlowFile(file: File): Promise<api.FlowImport[]> {
   if (!/\.(json|jsonl|ndjson)$/i.test(file.name)) {
@@ -115,7 +131,7 @@ async function readFlowFile(file: File): Promise<api.FlowImport[]> {
         return Array.isArray(parsed) ? parsed : [parsed];
       })();
   if (!rows.length) throw new Error("The file contains no flow records");
-  if (rows.length > 500) throw new Error("Import up to 500 flows at a time");
+  if (rows.length > 5000) throw new Error("Import up to 5,000 flows at a time");
   for (const [index, row] of rows.entries()) {
     if (
       !row ||
@@ -145,6 +161,7 @@ export default function App() {
     [selectedFlow, setSelectedFlow] = useState<Flow | null>(null),
     [selectedEvent, setSelectedEvent] = useState<Anomaly | null>(null),
     [inv, setInv] = useState<Investigation | null>(null),
+    [caseTab, setCaseTab] = useState<CaseTab>("evidence"),
     [ev, setEv] = useState<Evidence[]>([]),
     [rep, setRep] = useState<Report | null>(null),
     [caseLoading, setCaseLoading] = useState(false),
@@ -211,6 +228,7 @@ export default function App() {
     caseGeneration.current++;
     setSelectedEvent(null);
     setSelectedFlow(null);
+    setCaseTab("evidence");
   }
   const filtered = useMemo(() => {
     if (!data) return null;
@@ -242,11 +260,9 @@ export default function App() {
       return (
         (status === "all" || e.status === status) &&
         (priorityFilter === "all" ||
-          priority(e.anomaly_score) === priorityFilter) &&
+          priority(e.anomaly_score, thresholds) === priorityFilter) &&
         (!minScore || e.anomaly_score >= thresholds.investigate_at) &&
-        `${e.event_id} ${e.flow_id} ${f?.src_ip} ${f?.dst_ip}`
-          .toLowerCase()
-          .includes(query.toLowerCase())
+        anomalySearchText(e, f).toLowerCase().includes(query.toLowerCase())
       );
     }) ?? [];
   async function action(fn: () => Promise<void>, message: string) {
@@ -262,10 +278,11 @@ export default function App() {
       setBusy(false);
     }
   }
-  async function loadCase(i: Investigation, p = "Investigations") {
+  async function loadCase(i: Investigation, tab: CaseTab = "evidence") {
     const generation = ++caseGeneration.current;
     setInv(i);
-    setPage(p);
+    setCaseTab(tab);
+    setPage("Cases");
     setSelectedEvent(null);
     setEv([]);
     setRep(null);
@@ -294,9 +311,9 @@ export default function App() {
         const i = await api.investigate(e.event_id);
         const next = await api.snapshot();
         setData(next);
-        await loadCase(i);
+        await loadCase(i, "evidence");
       },
-      "Investigation complete",
+      "Investigation complete — opened in Cases",
     );
   }
   function reviewReport(s: string) {
@@ -344,7 +361,10 @@ export default function App() {
     setImportResult(null);
     try {
       const flows = await readFlowFile(file);
-      const results = await api.importFlows(flows);
+      const results: api.IngestResult[] = [];
+      for (let i = 0; i < flows.length; i += 500) {
+        results.push(...(await api.importFlows(flows.slice(i, i + 500))));
+      }
       setImportResult({ filename: file.name, results });
       await refresh();
     } catch (err) {
@@ -373,8 +393,8 @@ export default function App() {
               <Shield size={26} />
             </span>
             <span>
-              NetSentry<span className="brand-ai">AI</span>
-              <small>SECURITY OPERATIONS</small>
+              NetSentry
+              <small>Local</small>
             </span>
           </button>
           <div className="workspace-label">
@@ -429,16 +449,11 @@ export default function App() {
               >
                 <Menu size={18} />
               </IconButton>
-              <span>Workspace</span>
+              <span>NetSentry</span>
               <ChevronRight size={14} />
-              <strong>{page}</strong>
+              <strong>{pageTitles[page] ?? page}</strong>
             </div>
             <div className="topbar-right">
-              <span className="live-label">
-                <i />
-                {healthy ? "CONNECTED" : "OFFLINE"}
-              </span>
-              <span className="top-divider" />
               <IconButton
                 label="Open anomaly queue"
                 onClick={() => navigate("Anomalies")}
@@ -453,16 +468,9 @@ export default function App() {
             <div className="page-heading">
               <div>
                 <div className="eyebrow">
-                  NETSENTRY AI <span>/</span>{" "}
-                  {page === "Overview" ? "COMMAND CENTER" : page.toUpperCase()}
+                  NetSentry <span>/</span> {pageTitles[page] ?? page}
                 </div>
-                <h1>
-                  {page === "Overview"
-                    ? "Security overview"
-                    : page === "Flow Records"
-                      ? "Ingested flow records"
-                      : page}
-                </h1>
+                <h1>{pageTitles[page] ?? page}</h1>
                 <p>{descriptions[page]}</p>
               </div>
               <div className="heading-actions">
@@ -490,28 +498,6 @@ export default function App() {
                 </IconButton>
               </div>
             </div>
-            <div className="workspace-strip">
-              <div>
-                <span className={`status-dot ${healthy ? "" : "offline"}`} />
-                <span>
-                  {healthy
-                    ? "Flow telemetry connected"
-                      : "Connection unavailable"}
-                </span>
-                <span className="strip-separator" />
-                <span>
-                  {data?.model.model_version ?? "Detector unavailable"}
-                </span>
-                {data?.model.model_version.includes("stub") && (
-                  <Badge value="heuristic" />
-                )}
-              </div>
-              <span>
-                {lastRefresh
-                  ? `Updated ${lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                  : "Awaiting connection"}
-              </span>
-            </div>
             {error && (
               <div className="error-banner" role="alert">
                 <ShieldAlert size={18} />
@@ -538,9 +524,9 @@ export default function App() {
               <Empty title="Connecting to NetSentry..." />
             ) : !filtered ? (
               <Empty title="Backend unavailable" text="No telemetry loaded." />
-            ) : page === "Import Flows" ? (
+            ) : page === "Import" ? (
               <div className="flow-import-layout">
-                <Panel title="Import flow records" meta="JSON · JSONL · 500 records max">
+                <Panel title="Import flow records" meta="JSON · JSONL · 5,000 records max, 500 per request">
                   <div className="flow-upload">
                     <Upload size={22} />
                     <div>
@@ -557,9 +543,27 @@ export default function App() {
                     <strong>{importResult.filename}</strong>
                     <span>{importResult.results.length.toLocaleString()} flows scored</span>
                     <span>{importResult.results.filter((flow) => flow.event_id).length.toLocaleString()} anomaly events created</span>
+                    {importResult.results.some((flow) => flow.event_id) && (
+                      <div className="import-result-actions">
+                        <button
+                          className="button primary"
+                          onClick={() => {
+                            const eventId = importResult.results.find((flow) => flow.event_id)?.event_id;
+                            const event = data?.anomalies.find((a) => a.event_id === eventId);
+                            if (event) void selectEvent(event);
+                            else navigate("Anomalies");
+                          }}
+                        >
+                          View anomaly
+                        </button>
+                        <button className="button" onClick={() => navigate("Anomalies")}>
+                          Open queue
+                        </button>
+                      </div>
+                    )}
                   </div>}
                 </Panel>
-                <p className="flow-import-limitation">PCAP parsing and network-interface capture are not available. Flow Records lists telemetry already ingested by the API.</p>
+                <p className="flow-import-limitation">PCAP parsing and network-interface capture are not available. Flows lists telemetry already ingested by the API.</p>
               </div>
             ) : page === "Overview" ? (
               <Overview
@@ -576,24 +580,14 @@ export default function App() {
                 <div className="threshold-band">
                   <ShieldAlert size={22} />
                   <div>
-                    <strong>Detection policy</strong>
-                    <span>Score boundaries</span>
+                    <strong>Queue</strong>
+                    <span>
+                      Monitor at {thresholds.monitor_at.toFixed(2)} · investigate at {thresholds.investigate_at.toFixed(2)}.{" "}
+                      <button className="text-link" onClick={() => navigate("Model")}>
+                        How scoring works
+                      </button>
+                    </span>
                   </div>
-                  <span>
-                    <b>&lt; {thresholds.monitor_at.toFixed(2)}</b> Store
-                  </span>
-                  <ArrowRight size={15} />
-                  <span>
-                    <b>
-                      {thresholds.monitor_at.toFixed(2)}–
-                      {thresholds.investigate_at.toFixed(2)}
-                    </b>{" "}
-                    Monitor
-                  </span>
-                  <ArrowRight size={15} />
-                  <span>
-                    <b>≥ {thresholds.investigate_at.toFixed(2)}</b> Investigate
-                  </span>
                 </div>
                 <Panel
                   title="Anomaly queue"
@@ -638,7 +632,7 @@ export default function App() {
                     >
                       {["all", "critical", "high", "medium", "low"].map((p) => (
                         <option key={p} value={p}>
-                          {p === "all" ? "All priorities" : human(p)}
+                          {p === "all" ? "All severity bands" : human(p)}
                         </option>
                       ))}
                     </select>
@@ -653,10 +647,22 @@ export default function App() {
                     events={anomalies}
                     flows={data!.flows}
                     onSelect={(e) => void selectEvent(e)}
+                    thresholds={thresholds}
+                    empty={
+                      <Empty
+                        title="No anomalies yet"
+                        text="Import sample_data/demo_flows.jsonl from Import."
+                        action={
+                          <button className="button primary" onClick={() => navigate("Import")}>
+                            Go to Import
+                          </button>
+                        }
+                      />
+                    }
                   />
                 </Panel>
               </>
-            ) : page === "Flow Records" ? (
+            ) : page === "Flows" ? (
               <Panel
                 title="Flow telemetry"
                 meta={`${flows.length} matching flows`}
@@ -721,15 +727,11 @@ export default function App() {
                                 </td>
                                 <td>
                                   <Badge
-                                    value={
-                                      f.anomaly_score >=
-                                      thresholds.investigate_at
-                                        ? "investigate"
-                                        : f.anomaly_score >=
-                                            thresholds.monitor_at
-                                          ? "monitoring"
-                                          : "normal"
-                                    }
+                                    kind="decision"
+                                    value={decisionFromScore(
+                                      f.anomaly_score,
+                                      thresholds,
+                                    )}
                                   />
                                 </td>
                               </tr>
@@ -760,10 +762,18 @@ export default function App() {
                     </div>
                   </>
                 ) : (
-                  <Empty title="No flows found" />
+                  <Empty
+                    title="No flows yet"
+                    text="Import sample_data/demo_flows.jsonl from Import."
+                    action={
+                      <button className="button primary" onClick={() => navigate("Import")}>
+                        Go to Import
+                      </button>
+                    }
+                  />
                 )}
               </Panel>
-            ) : page === "Investigations" || page === "Reports" ? (
+            ) : page === "Cases" ? (
               inv ? (
                 <>
                   <div className="case-toolbar">
@@ -775,21 +785,18 @@ export default function App() {
                       }}
                     >
                       <ArrowLeft size={16} />
-                      All {page.toLowerCase()}
+                      All cases
                     </button>
                     <div className="segmented">
-                      <button
-                        className={page === "Investigations" ? "selected" : ""}
-                        onClick={() => setPage("Investigations")}
-                      >
-                        Workflow
-                      </button>
-                      <button
-                        className={page === "Reports" ? "selected" : ""}
-                        onClick={() => setPage("Reports")}
-                      >
-                        Report
-                      </button>
+                      {(["evidence", "report", "review"] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          className={caseTab === tab ? "selected" : ""}
+                          onClick={() => setCaseTab(tab)}
+                        >
+                          {human(tab)}
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <CaseView
@@ -797,53 +804,79 @@ export default function App() {
                     evidence={ev}
                     report={rep}
                     loading={caseLoading}
-                    onReport={page === "Reports"}
+                    tab={caseTab}
+                    onTab={setCaseTab}
                     onReview={reviewReport}
                     busy={busy}
                     event={data?.anomalies.find(
                       (e) => e.event_id === inv.event_id,
                     )}
+                    flow={data?.flows.find(
+                      (f) =>
+                        f.flow_id ===
+                        data.anomalies.find((e) => e.event_id === inv.event_id)
+                          ?.flow_id,
+                    )}
+                    monitor={thresholds.monitor_at}
                     threshold={thresholds.investigate_at}
                   />
                 </>
               ) : (
                 <Panel
-                  title={
-                    page === "Reports" ? "Case reports" : "Investigation cases"
-                  }
+                  title="Cases"
                   meta={`${filtered.investigations.length} cases`}
                 >
                   <div className="filter-bar">
                     <SearchBox
                       value={query}
                       onChange={setQuery}
-                      placeholder="Search investigation or event..."
+                      placeholder="Search host, event, or case..."
                     />
                   </div>
                   {filtered.investigations.length ? (
                     <div className="case-list">
                       {filtered.investigations
-                        .filter((i) =>
-                          `${i.investigation_id} ${i.event_id}`
+                        .filter((i) => {
+                          const event = data?.anomalies.find(
+                            (e) => e.event_id === i.event_id,
+                          );
+                          const flow = data?.flows.find(
+                            (f) => f.flow_id === event?.flow_id,
+                          );
+                          return `${i.investigation_id} ${i.event_id} ${flowHeadline(flow)}`
                             .toLowerCase()
-                            .includes(query.toLowerCase()),
-                        )
-                        .map((i) => (
+                            .includes(query.toLowerCase());
+                        })
+                        .map((i) => {
+                          const event = data?.anomalies.find(
+                            (e) => e.event_id === i.event_id,
+                          );
+                          const flow = data?.flows.find(
+                            (f) => f.flow_id === event?.flow_id,
+                          );
+                          const decision = event
+                            ? decisionShort(
+                                decisionFromScore(event.anomaly_score, thresholds),
+                              )
+                            : i.state;
+                          return (
                           <button
                             className="case-row"
                             key={i.investigation_id}
-                            onClick={() => void loadCase(i, page)}
+                            onClick={() => void loadCase(i, "evidence")}
                           >
                             <span className="case-icon">
-                              {page === "Reports" ? (
-                                <FileText size={21} />
-                              ) : (
-                                <Workflow size={21} />
-                              )}
+                              <Workflow size={21} />
                             </span>
                             <div>
-                              <strong>{i.investigation_id}</strong>
-                              <small>{i.event_id}</small>
+                              <strong>{flowHeadline(flow)}</strong>
+                              <small>
+                                {caseSecondary(
+                                  i.event_id,
+                                  event?.anomaly_score,
+                                  decision,
+                                )}
+                              </small>
                             </div>
                             <span className="muted">
                               {date(i.started_at).toLocaleDateString()} ·{" "}
@@ -852,12 +885,18 @@ export default function App() {
                             <Badge value={i.state} />
                             <ArrowRight size={17} />
                           </button>
-                        ))}
+                          );
+                        })}
                     </div>
                   ) : (
                     <Empty
-                      title="No investigation cases yet"
-                      text="Open an anomaly to start an investigation."
+                      title="No cases yet"
+                      text="Select an anomaly and choose Run investigation."
+                      action={
+                        <button className="button primary" onClick={() => navigate("Anomalies")}>
+                          Open anomaly queue
+                        </button>
+                      }
                     />
                   )}
                 </Panel>
@@ -866,57 +905,12 @@ export default function App() {
               <TrafficAnalytics
                 data={filtered}
                 onSource={(ip) => {
-                  navigate("Flow Records");
+                  navigate("Flows");
                   setQuery(ip);
                 }}
               />
             ) : page === "Model" ? (
-              <div className="system-grid">
-                <Panel title="Active detector" meta={human(data!.model.model)}>
-                  <dl className="facts">
-                    <div>
-                      <dt>Version</dt>
-                      <dd>{data!.model.model_version}</dd>
-                    </div>
-                    <div>
-                      <dt>Mode</dt>
-                      <dd>
-                        {data!.model.model_version.includes("stub")
-                            ? "Heuristic fallback"
-                            : "Model artifact"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Monitor boundary</dt>
-                      <dd>{thresholds.monitor_at.toFixed(2)}</dd>
-                    </div>
-                    <div>
-                      <dt>Investigate boundary</dt>
-                      <dd>{thresholds.investigate_at.toFixed(2)}</dd>
-                    </div>
-                  </dl>
-                  <div className="threshold-note">
-                    <span>Detection chain</span>
-                    <p>
-                      Network flows → Features → Detector → Anomaly events →
-                      Evidence → Risk → Report → Analyst review
-                    </p>
-                  </div>
-                </Panel>
-                <Panel
-                  title="Feature contract"
-                  meta={`${data!.model.feature_order.length} input features`}
-                >
-                  <div className="feature-list">
-                    {data!.model.feature_order.map((f, i) => (
-                      <div key={f}>
-                        <span>{String(i + 1).padStart(2, "0")}</span>
-                        <code>{f}</code>
-                      </div>
-                    ))}
-                  </div>
-                </Panel>
-              </div>
+              <ModelWorkbench model={data!.model} />
             ) : page === "Privacy Policy" ? (
               <PrivacyPolicy />
             ) : page === "API Health" ? (
@@ -1001,9 +995,25 @@ export default function App() {
             setSelectedFlow(null);
             setSelectedEvent(null);
           }}
-          title={selectedEvent?.event_id ?? selectedFlow?.flow_id ?? "Details"}
+          title={flowHeadline(selectedFlow ?? selectedEventFlow)}
           description={
-            selectedEvent ? "Anomaly event details" : "Network flow details"
+            selectedEvent
+              ? caseSecondary(
+                  selectedEvent.event_id,
+                  selectedEvent.anomaly_score,
+                  decisionShort(
+                    decisionFromScore(selectedEvent.anomaly_score, thresholds),
+                  ),
+                )
+              : selectedFlow
+                ? caseSecondary(
+                    selectedFlow.flow_id,
+                    selectedFlow.anomaly_score,
+                    decisionShort(
+                      decisionFromScore(selectedFlow.anomaly_score, thresholds),
+                    ),
+                  )
+                : "Network flow details"
           }
         >
           {(selectedFlow || selectedEventFlow) && (
@@ -1084,7 +1094,7 @@ export default function App() {
                 ) : (
                   <Workflow size={17} />
                 )}
-                Investigate event
+                Run investigation
                 <ArrowRight size={16} />
               </button>
             </div>
@@ -1139,8 +1149,7 @@ function PrivacyPolicy() {
               Flow records, anomaly events, evidence, and reports are handled
               by the backend
               configured for this installation. The deployment operator
-              controls its database, access, and retention. Optional
-              An optional language-model provider configured on the backend
+              controls its database, access, and retention.               An optional language-model provider configured on the backend
               may receive investigation data to generate report text.
             </p>
           </section>

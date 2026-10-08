@@ -19,13 +19,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:8000")
     ap.add_argument("--file", default="sample_data/demo_flows.jsonl")
+    ap.add_argument("--chunk", type=int, default=500)
     args = ap.parse_args()
-    with open(args.file) as f:
-        for line in f:
-            flow = json.loads(line)
-            out = post(f"{args.api}/flows/ingest", flow)
-            print(f"{flow['flow_id']} -> score={out['anomaly_score']} pred={out['prediction']} event={out['event_id']}")
-    print("done. Check GET /flows and GET /anomalies in browser/docs.")
+    flows = [json.loads(line) for line in open(args.file) if line.strip()]
+    scored, events = 0, 0
+    for i in range(0, len(flows), args.chunk):
+        batch = flows[i : i + args.chunk]
+        out = post(f"{args.api}/flows/batch", batch)
+        for flow, result in zip(batch, out):
+            scored += 1
+            if result.get("event_id"):
+                events += 1
+            print(
+                f"{result['flow_id']} -> score={result['anomaly_score']} "
+                f"pred={result['prediction']} event={result['event_id']}"
+            )
+    print(f"done. {scored} flows scored, {events} anomaly events created.")
 
 
 if __name__ == "__main__":

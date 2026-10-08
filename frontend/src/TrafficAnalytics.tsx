@@ -90,7 +90,7 @@ export default function TrafficAnalytics({
                       <span
                         style={{
                           width: `${(count / data.flows.length) * 100}%`,
-                          background: ["#61d4b6", "#e7b36e", "#81b4dc"][i % 3],
+                          background: ["#78a9ff", "#f1c21b", "#8a3ffc"][i % 3],
                         }}
                       />
                     </div>
@@ -134,7 +134,7 @@ export default function TrafficAnalytics({
                       <span
                         style={{
                           width: `${(count / data.flows.length) * 100}%`,
-                          background: "#81b4dc",
+                          background: "var(--accent)",
                         }}
                       />
                     </div>
@@ -168,25 +168,29 @@ export default function TrafficAnalytics({
                   .sort((a, b) => b[1].bytes - a[1].bytes)
                   .slice(0, 15)
                   .map(([ip, s]) => (
-                    <tr key={ip}>
+                    <tr
+                      key={ip}
+                      className="clickable-row"
+                      tabIndex={0}
+                      aria-label={`View flows from ${ip}`}
+                      onClick={() => onSource(ip)}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          onSource(ip);
+                        }
+                      }}
+                    >
                       <td>
-                        <button
-                          className="row-link"
-                          onClick={() => onSource(ip)}
-                        >
-                          {ip}
-                        </button>
+                        <span className="row-link">{ip}</span>
                       </td>
                       <td>{s.flows}</td>
                       <td>{bytes(s.bytes)}</td>
                       <td>{s.anomalies}</td>
                       <td>
-                        <button
-                          aria-label={`View flows from ${ip}`}
-                          onClick={() => onSource(ip)}
-                        >
+                        <span className="table-open" aria-hidden="true">
                           <ArrowUpRight size={16} />
-                        </button>
+                        </span>
                       </td>
                     </tr>
                   ))}

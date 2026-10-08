@@ -137,12 +137,11 @@ The React console does not contain a demo data mode. It displays data returned b
 | Console page | What it presents | Backend contract |
 | :--- | :--- | :--- |
 | Overview | Counts and activity derived from loaded flows, anomalies, and investigations | `GET /flows`, `GET /anomalies`, `GET /investigations`, `GET /model/info`, `GET /health` |
-| Flow Records | Search, inspect, and export ingested records and anomaly scores | `GET /flows`, `GET /flows/{flow_id}` |
-| Import Flows | Submit normalized records for scoring and storage | `POST /flows/batch` |
+| Flows | Search, inspect, and export ingested records and anomaly scores | `GET /flows`, `GET /flows/{flow_id}` |
+| Import | Submit normalized records for scoring and storage | `POST /flows/batch` |
 | Traffic Analytics | Protocol, destination-port, and source-host breakdowns computed from loaded records | `GET /flows`, `GET /anomalies` |
 | Anomalies | Filter events, inspect related flows, change status, and start an investigation | `GET /anomalies`, `GET /flows/{flow_id}`, `PATCH /anomalies/{event_id}`, `POST /investigations/{event_id}` |
-| Investigations | Read case state and collected evidence | `GET /investigations`, `GET /investigations/{id}/evidence` |
-| Reports | List investigation cases, read generated reports, and submit analyst review | `GET /investigations`, `GET /reports/{id}`, `POST /reports/{id}/review` |
+| Cases | Evidence, generated report, and analyst review for an investigation | `GET /investigations`, `GET /investigations/{id}/evidence`, `GET /reports/{id}`, `POST /reports/{id}/review` |
 | Model and API Health | Display the active detector, feature order, thresholds, and service status | `GET /model/info`, `GET /health` |
 | Settings | Toggle the console's 15-second refresh interval | Browser state only |
 | Privacy Policy | Describe the self-hosted console's API and telemetry handling | Static console content |
@@ -179,7 +178,7 @@ The console loads up to 500 flows, anomalies, and investigations per feed. Its c
 
 ### Model and Dataset Notes
 
-The repository includes an Isolation Forest artifact and validation output for CIC-IDS2017. The model artifact reports its version and expected feature order through `/model/info`. Set `MODEL_PATH` to `ml/netsentry_ml_outputs/isolation_forest_v1.joblib` to select this artifact; otherwise the backend uses the configured default path and falls back to the heuristic detector if no artifact is found. The repository does not currently ingest PCAP files or provide a PCAP replay pipeline.
+The repository includes an Isolation Forest artifact and validation output for CIC-IDS2017. The bundled artifact at `ml/netsentry_ml_outputs/isolation_forest_v1.joblib` is used by default; set `MODEL_PATH` to override it. The API reports the active artifact and feature order through `/model/info`, saved evaluation metadata through `/model/metrics`, and compatibility through `/model/validate`. The repository does not currently ingest PCAP files or provide a PCAP replay pipeline.
 
 ---
 
@@ -353,9 +352,9 @@ python scripts/seed.py
 
 ### 1. Import Normalized Flow Records
 
-Start the backend and React console as shown below, then open the **Import Flows** page. Choose a `.json`, `.jsonl`, or `.ndjson` file containing normalized flow records. The JSON file may contain one record or an array; JSONL and NDJSON contain one JSON object per line. Records must include `src_ip`, `dst_ip`, `src_port`, and `dst_port`. Optional fields include `timestamp`, `protocol`, `duration`, `orig_bytes`, `resp_bytes`, `orig_pkts`, and `resp_pkts`.
+Start the backend and React console as shown below, then open the **Import** page. Choose a `.json`, `.jsonl`, or `.ndjson` file containing normalized flow records. The JSON file may contain one record or an array; JSONL and NDJSON contain one JSON object per line. Records must include `src_ip`, `dst_ip`, `src_port`, and `dst_port`. Optional fields include `timestamp`, `protocol`, `duration`, `orig_bytes`, `resp_bytes`, `orig_pkts`, and `resp_pkts`.
 
-The importer accepts files up to 10 MB and 500 records and submits them to `POST /flows/batch` for feature extraction, scoring, storage, and event creation. Raw PCAP files and direct network-interface capture are not supported by the current application. Convert packet captures to normalized flow records with an external tool before importing them.
+The importer accepts files up to 10 MB and 5,000 records and submits them to `POST /flows/batch` in chunks of 500 for feature extraction, scoring, storage, and event creation. Use `sample_data/demo_flows.jsonl` for the short path and `sample_data/cicids2017_eval.jsonl` to score a larger CIC-IDS2017-style mix. Raw PCAP files and direct network-interface capture are not supported by the current application. Convert packet captures to normalized flow records with an external tool before importing them.
 
 ### 2. Launch FastAPI Backend
 
@@ -387,7 +386,7 @@ docker compose -f docker/docker-compose.yml up --build
 python scripts/seed.py
 uvicorn api.main:app --port 8000          # terminal 1
 cd frontend; npm install; npm run dev     # terminal 2
-# browser: http://localhost:5173 -> Anomalies -> select an event -> Investigate event
+# browser: http://localhost:5173 -> Import demo_flows.jsonl -> Anomalies -> Run investigation -> Cases
 # investigations are started by an analyst; crossing the threshold does not start one automatically
 ```
 

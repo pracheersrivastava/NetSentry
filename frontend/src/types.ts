@@ -74,6 +74,26 @@ export type Model = {
   artifact: string;
   thresholds: { monitor_at: number; investigate_at: number };
 };
+export type Prediction = {
+  flow_id: string;
+  model: string;
+  model_version: string;
+  anomaly_score: number;
+  prediction: string;
+  features_used: Features;
+};
+export type ModelMetrics = {
+  available: boolean;
+  dataset?: string;
+  training_type?: string;
+  training_samples?: number;
+  benign_validation_samples?: number;
+  roc_auc?: number;
+  precision?: number;
+  recall?: number;
+  f1?: number;
+  false_positive_rate?: number;
+};
 export type Health = {
   status: string;
   model: string;

@@ -219,7 +219,28 @@ def model_info():
     det = _get_detector()
     with open("features/schema.json") as f:
         schema = json.load(f)
-    return {"model": det.model_name, "model_version": det.model_version, "feature_order": schema["feature_order"], "artifact": os.getenv("MODEL_PATH", ""), "thresholds": _thresholds}
+    artifact = os.getenv(
+        "MODEL_PATH", "ml/netsentry_ml_outputs/isolation_forest_v1.joblib"
+    )
+    return {"model": det.model_name, "model_version": det.model_version, "feature_order": schema["feature_order"], "artifact": artifact, "thresholds": _thresholds}
+
+
+@app.get("/model/metrics")
+def model_metrics():
+    """Published evaluation metadata for the active bundled model, when available."""
+    import json
+    from pathlib import Path
+
+    metrics_path = Path("ml/netsentry_ml_outputs/isolation_forest_v1_metrics.json")
+    bundled_artifact = Path("ml/netsentry_ml_outputs/isolation_forest_v1.joblib")
+    active_artifact = Path(
+        os.getenv("MODEL_PATH", "ml/netsentry_ml_outputs/isolation_forest_v1.joblib")
+    )
+    if not metrics_path.exists() or active_artifact.resolve() != bundled_artifact.resolve():
+        return {"available": False}
+    with metrics_path.open() as f:
+        metrics = json.load(f)
+    return {"available": True, "artifact": str(bundled_artifact), **metrics}
 
 
 @app.post("/model/validate")
@@ -227,7 +248,9 @@ def model_validate():
     """ML team: drop .joblib then POST here to check compatibility WITHOUT restarting."""
     from ml.validate import validate_artifact
 
-    ok, report = validate_artifact(os.getenv("MODEL_PATH", "ml/models/isolation_forest_v1.joblib"))
+    ok, report = validate_artifact(
+        os.getenv("MODEL_PATH", "ml/netsentry_ml_outputs/isolation_forest_v1.joblib")
+    )
     return {"ok": ok, **report}
 
 

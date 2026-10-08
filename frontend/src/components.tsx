@@ -2,6 +2,14 @@ import type { ReactNode } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, Search, ShieldCheck, ArrowUpRight } from "lucide-react";
+import {
+  SCORE_HINT,
+  decisionFromScore,
+  decisionLabel,
+  decisionShort,
+  severityLabel,
+  type Thresholds,
+} from "./copy";
 
 export const human = (s: string) =>
   s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -35,19 +43,35 @@ export const time = (s: string) =>
     minute: "2-digit",
     second: "2-digit",
   });
-export const priority = (score: number) =>
+export const priority = (
+  score: number,
+  thresholds: Thresholds = { monitor_at: 0.6, investigate_at: 0.85 },
+) =>
   score >= 0.9
     ? "critical"
-    : score >= 0.85
+    : score >= thresholds.investigate_at
       ? "high"
-      : score >= 0.6
+      : score >= thresholds.monitor_at
         ? "medium"
         : "low";
-export function Badge({ value }: { value: string }) {
+export function Badge({
+  value,
+  kind = "status",
+}: {
+  value: string;
+  kind?: "status" | "decision" | "severity";
+}) {
+  const cls = value.toLowerCase();
+  const label =
+    kind === "decision"
+      ? decisionShort(cls)
+      : kind === "severity"
+        ? severityLabel(cls)
+        : human(value);
   return (
-    <span className={`badge ${value.toLowerCase()}`}>
+    <span className={`badge ${kind} ${cls}`}>
       <i />
-      {human(value)}
+      {label}
     </span>
   );
 }
@@ -111,15 +135,18 @@ export function Panel({
 export function Empty({
   title = "No records found",
   text = "",
+  action,
 }: {
   title?: string;
   text?: string;
+  action?: ReactNode;
 }) {
   return (
     <div className="empty">
       <ShieldCheck size={30} />
       <h3>{title}</h3>
       {text && <p>{text}</p>}
+      {action && <div className="empty-action">{action}</div>}
     </div>
   );
 }
@@ -158,19 +185,36 @@ export function ScoreGauge({
   monitor: number;
   investigate: number;
 }) {
+  const thresholds = { monitor_at: monitor, investigate_at: investigate };
+  const band = decisionFromScore(score, thresholds);
   return (
     <div className="score-gauge">
       <div className="score-heading">
-        <span>Anomaly score</span>
-        <strong className={priority(score)}>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <span className="score-hint" tabIndex={0}>
+              Anomaly score
+            </span>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content className="tooltip" sideOffset={7}>
+              {SCORE_HINT}
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+        <strong className={priority(score, thresholds)}>
           {score.toFixed(2)}
           <small> / 1.00</small>
         </strong>
       </div>
+      <div className="gauge-meta">
+        <Badge value={band} kind="decision" />
+        <span className="muted">{decisionLabel(score, thresholds)}</span>
+      </div>
       <div
         className="gauge-track"
         style={{
-          background: `linear-gradient(to right, #3b7770 0% ${monitor * 100}%, #cfa759 ${monitor * 100}% ${investigate * 100}%, #e76e6e ${investigate * 100}% 100%)`,
+          background: `linear-gradient(to right, var(--decision-store) 0% ${monitor * 100}%, var(--decision-monitor) ${monitor * 100}% ${investigate * 100}%, var(--decision-investigate) ${investigate * 100}% 100%)`,
         }}
       >
         <i style={{ left: `${Math.min(99, Math.max(1, score * 100))}%` }} />

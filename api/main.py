@@ -19,7 +19,7 @@ from ml.predict import get_detector
 from events.threshold import load_thresholds
 from events.event_manager import build_event
 from capture.normalizer import normalize
-from agent.stub_agent import run_stub_investigation
+from agent.graph import run_graph_investigation
 from reports.generator import build_report, new_report_doc
 
 _detector = None
@@ -224,7 +224,7 @@ def model_validate():
 
 @app.post("/investigations/{event_id}", response_model=InvestigationOut)
 def start_investigation(event_id: str, db: Session = Depends(get_db)):
-    """Phase 1: deterministic stub (3 tools). Phase 2: LangGraph replaces run_stub_investigation internals."""
+    """LangGraph investigation (dynamic selector, deterministic risk). LLM only enhances report."""
     from fastapi import HTTPException
 
     if not repo.get_event(db, event_id):
@@ -233,7 +233,7 @@ def start_investigation(event_id: str, db: Session = Depends(get_db)):
     existing = repo.get_investigation_by_event(db, event_id)
     if existing:
         return InvestigationOut(investigation_id=existing.investigation_id, event_id=existing.event_id, state=existing.state, started_at=existing.started_at, completed_at=existing.completed_at, outcome=existing.outcome)
-    inv_id = run_stub_investigation(db, event_id)
+    inv_id = run_graph_investigation(db, event_id)
     # Auto-build stub report so dashboard has full chain immediately
     inv = repo.get_investigation(db, inv_id)
     ev = repo.get_event(db, event_id)

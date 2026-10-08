@@ -252,6 +252,8 @@ def start_investigation(event_id: str, db: Session = Depends(get_db)):
         )
         if llm_out:
             rep_json["findings"] = llm_out.get("findings") or rep_json["findings"]
+            if llm_out.get("mitre_techniques"):
+                rep_json["mitre_techniques"] = llm_out.get("mitre_techniques")
             rep_json["confidence"] = llm_out.get("confidence", rep_json["confidence"])
             rep_json["uncertainties"] = llm_out.get("uncertainties", rep_json["uncertainties"])
             rep_json["llm_model"] = model_name()

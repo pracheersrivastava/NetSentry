@@ -23,21 +23,20 @@ def model_name() -> str:
 
 
 def synthesize(event: dict, evidence: list[dict]) -> dict | None:
-    """Try Gemini, return {findings, confidence, uncertainties} or None on any failure."""
+    """Try Gemini, return {findings, mitre_techniques, confidence, uncertainties} or None on any failure."""
     if not enabled():
         print("[llm] skipped: LLM_ENABLED!=true or GEMINI_API_KEY missing")
         return None
     key = os.getenv("GEMINI_API_KEY", "")
     model = model_name()
-    prompt = (
-        "You are a SOC assistant. Given ANOMALY EVENT and TOOL OUTPUTS (facts), "
-        "write 2-4 grounded findings. Rules: cite tool names, separate observed facts "
-        "from hypotheses, never invent IPs/ports/scores, output strict JSON "
-        '{"findings": [...], "confidence": 0.0-1.0, "uncertainties": [...]}.\n'
-        f"EVENT: {json.dumps(event)[:2000]}\n"
-        f"EVIDENCE: {json.dumps(evidence)[:6000]}"
+
+    from agent.prompts import SYNTHESIS_PROMPT_TEMPLATE
+
+    prompt = SYNTHESIS_PROMPT_TEMPLATE.format(
+        event_json=json.dumps(event)[:2500],
+        evidence_json=json.dumps(evidence)[:7000],
     )
-    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2, "maxOutputTokens": 600}}).encode()
+    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2, "maxOutputTokens": 800}}).encode()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     try:
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
@@ -47,7 +46,12 @@ def synthesize(event: dict, evidence: list[dict]) -> dict | None:
         # strip markdown fences if model adds them
         text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         out = json.loads(text)
-        return {"findings": out.get("findings", []), "confidence": float(out.get("confidence", 0.5)), "uncertainties": out.get("uncertainties", [])}
+        return {
+            "findings": out.get("findings", []),
+            "mitre_techniques": out.get("mitre_techniques", []),
+            "confidence": float(out.get("confidence", 0.5)),
+            "uncertainties": out.get("uncertainties", []),
+        }
     except Exception as e:
         print(f"[llm] fallback to stub (reason: {type(e).__name__}: {e})")
         return None

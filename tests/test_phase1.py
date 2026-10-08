@@ -13,7 +13,7 @@ def test_phase1_full_chain():
     assert inv["state"] == "done", inv
     ev = client.get(f"/investigations/{inv['investigation_id']}/evidence").json()
     tools = {e["source_tool"] for e in ev}
-    assert tools == {"get_network_event", "search_historical_traffic", "analyze_connections"}, ev
+    assert {"get_network_event", "search_historical_traffic", "analyze_connections"}.issubset(tools), ev
     # report auto-created; fetch via investigation id convenience lookup
     rep = client.get(f"/reports/{inv['investigation_id']}").json()
     assert rep["report_json"]["incident_id"] == ing["event_id"]

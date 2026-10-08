@@ -1,0 +1,3 @@
+{"flow_id": "FLOW-0001", "src_ip": "192.168.1.10", "dst_ip": "10.0.0.25", "src_port": 51432, "dst_port": 443, "protocol": "TCP", "duration": 2.31, "orig_bytes": 12421, "resp_bytes": 85921, "orig_pkts": 32, "resp_pkts": 91}
+{"flow_id": "FLOW-0002", "src_ip": "192.168.1.99", "dst_ip": "10.0.0.25", "src_port": 44001, "dst_port": 80, "protocol": "TCP", "duration": 0.4, "orig_bytes": 90000, "resp_bytes": 2000, "orig_pkts": 300, "resp_pkts": 5}
+{"flow_id": "FLOW-0003", "src_ip": "192.168.1.66", "dst_ip": "10.0.0.99", "src_port": 51111, "dst_port": 22, "protocol": "TCP", "duration": 30.0, "orig_bytes": 1500, "resp_bytes": 800, "orig_pkts": 60, "resp_pkts": 10}

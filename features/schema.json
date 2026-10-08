@@ -1,0 +1,18 @@
+{
+  "feature_order": [
+    "duration",
+    "orig_bytes",
+    "resp_bytes",
+    "total_bytes",
+    "orig_pkts",
+    "resp_pkts",
+    "bytes_per_sec",
+    "pkts_per_sec",
+    "dst_port",
+    "protocol_TCP",
+    "unique_dst_ports_5min",
+    "failed_conn_ratio_5min"
+  ],
+  "version": "v0",
+  "notes": "FROZEN CONTRACT: stub and real IsolationForest must both consume features in this exact order. Do not reorder without bumping version + model_version."
+}

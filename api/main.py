@@ -146,10 +146,10 @@ def ingest_batch(flows: list[FlowIn], db: Session = Depends(get_db)):
 
 
 @app.get("/flows")
-def get_flows(limit: int = 50, offset: int = 0, src_ip: str | None = None, db: Session = Depends(get_db)):
+def get_flows(limit: int = Query(default=50, ge=1, le=500), offset: int = Query(default=0, ge=0), src_ip: str | None = None, db: Session = Depends(get_db)):
     rows = repo.list_flows(db, limit=limit, offset=offset, src_ip=src_ip)
     return [
-        {"flow_id": r.flow_id, "src_ip": r.src_ip, "dst_ip": r.dst_ip, "dst_port": r.dst_port, "protocol": r.protocol, "features": r.features}
+        _flow_view(r)
         for r in rows
     ]
 
@@ -161,7 +161,16 @@ def get_flow(flow_id: str, db: Session = Depends(get_db)):
     r = repo.get_flow(db, flow_id)
     if not r:
         raise HTTPException(404, "flow not found")
-    return {"flow_id": r.flow_id, "src_ip": r.src_ip, "dst_ip": r.dst_ip, "src_port": r.src_port, "dst_port": r.dst_port, "protocol": r.protocol, "features": r.features}
+    return _flow_view(r)
+
+
+def _flow_view(row):
+    score = _get_detector().predict(row.features).anomaly_score
+    return {
+        "flow_id": row.flow_id, "timestamp": row.timestamp, "src_ip": row.src_ip,
+        "dst_ip": row.dst_ip, "src_port": row.src_port, "dst_port": row.dst_port,
+        "protocol": row.protocol, "features": row.features, "anomaly_score": score,
+    }
 
 
 @app.get("/anomalies", response_model=list[AnomalyOut])
@@ -210,7 +219,7 @@ def model_info():
     det = _get_detector()
     with open("features/schema.json") as f:
         schema = json.load(f)
-    return {"model": det.model_name, "model_version": det.model_version, "feature_order": schema["feature_order"], "artifact": os.getenv("MODEL_PATH", "")}
+    return {"model": det.model_name, "model_version": det.model_version, "feature_order": schema["feature_order"], "artifact": os.getenv("MODEL_PATH", ""), "thresholds": _thresholds}
 
 
 @app.post("/model/validate")

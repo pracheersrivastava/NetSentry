@@ -1,0 +1,1245 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import {
+  Activity,
+  ArrowLeft,
+  ArrowRight,
+  Bell,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Download,
+  FileText,
+  FlaskConical,
+  LayoutDashboard,
+  LockKeyhole,
+  LoaderCircle,
+  Menu,
+  Network,
+  Radio,
+  RefreshCw,
+  Settings2,
+  Shield,
+  ShieldAlert,
+  Workflow,
+  X,
+} from "lucide-react";
+import type {
+  Anomaly,
+  Evidence,
+  Flow,
+  Investigation,
+  Report,
+  Snapshot,
+} from "./types";
+import * as api from "./api";
+import { createDemo, demoEvidence, demoReport } from "./demo";
+import {
+  Badge,
+  Drawer,
+  Empty,
+  IconButton,
+  Panel,
+  ScoreGauge,
+  SearchBox,
+  date,
+  download,
+  human,
+  featureName,
+  featureValue,
+  priority,
+  time,
+} from "./components";
+import Overview, { AnomalyTable } from "./Overview";
+import CaseView from "./CaseView";
+import TrafficAnalytics from "./TrafficAnalytics";
+
+const nav = [
+  {
+    group: "WORKSPACE",
+    items: [
+      ["Overview", LayoutDashboard],
+      ["Live Flows", Network],
+      ["Traffic Analytics", Activity],
+    ],
+  },
+  {
+    group: "DETECTION",
+    items: [
+      ["Anomalies", ShieldAlert],
+      ["Model", FlaskConical],
+    ],
+  },
+  {
+    group: "INVESTIGATION",
+    items: [
+      ["Investigations", Workflow],
+      ["Reports", FileText],
+    ],
+  },
+  {
+    group: "SYSTEM",
+    items: [
+      ["API Health", Radio],
+      ["Settings", Settings2],
+      ["Privacy Policy", LockKeyhole],
+    ],
+  },
+] as const;
+const descriptions: Record<string, string> = {
+  Overview: "Flow scores, detection thresholds, and evidence-led cases.",
+  "Live Flows": "Network telemetry and detection signals.",
+  "Traffic Analytics": "Traffic patterns across the loaded telemetry window.",
+  Anomalies: "Prioritize signals. Investigate what matters.",
+  Investigations: "Evidence-led investigation, from signal to assessment.",
+  Reports: "Incident findings ready for analyst review.",
+  Model: "Active detector and detection boundaries.",
+  "API Health": "Service availability and investigation capabilities.",
+  Settings: "Workspace and refresh preferences.",
+  "Privacy Policy": "How this self-hosted console handles telemetry.",
+};
+export default function App() {
+  const [page, setPage] = useState("Overview"),
+    [demo, setDemo] = useState(false),
+    [data, setData] = useState<Snapshot | null>(null),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
+    [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [query, setQuery] = useState(""),
+    [range, setRange] = useState("24"),
+    [status, setStatus] = useState("all"),
+    [minScore, setMinScore] = useState(false),
+    [flowPage, setFlowPage] = useState(0),
+    [selectedFlow, setSelectedFlow] = useState<Flow | null>(null),
+    [selectedEvent, setSelectedEvent] = useState<Anomaly | null>(null),
+    [inv, setInv] = useState<Investigation | null>(null),
+    [ev, setEv] = useState<Evidence[]>([]),
+    [rep, setRep] = useState<Report | null>(null),
+    [caseLoading, setCaseLoading] = useState(false),
+    [busy, setBusy] = useState(false),
+    [mobile, setMobile] = useState(false),
+    [autoRefresh, setAutoRefresh] = useState(true),
+    [notice, setNotice] = useState("");
+  const mode = useRef(0),
+    caseGeneration = useRef(0),
+    fetching = useRef(false),
+    busyRef = useRef(false),
+    reports = useRef(new Map<string, Report>()),
+    demoData = useRef<Snapshot | null>(null);
+  const [offline, setOffline] = useState(true);
+  const [eventFlow, setEventFlow] = useState<Flow | null>(null);
+  const detailGeneration = useRef(0);
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const refresh = useCallback(async () => {
+    if (fetching.current || busyRef.current) return;
+    fetching.current = true;
+    const generation = mode.current;
+    try {
+      const next = demo ? demoData.current! : await api.snapshot();
+      if (generation !== mode.current || busyRef.current) return;
+      setData(next);
+      setLastRefresh(new Date());
+      setError("");
+      setOffline(false);
+    } catch (e) {
+      if (generation === mode.current) {
+        setError(e instanceof Error ? e.message : "Unable to reach backend");
+        setOffline(true);
+      }
+    } finally {
+      fetching.current = false;
+      if (generation === mode.current) setLoading(false);
+    }
+  }, [demo]);
+  useEffect(() => {
+    void refresh();
+    if (!autoRefresh || demo) return;
+    const t = setInterval(() => void refresh(), 15000);
+    return () => clearInterval(t);
+  }, [refresh, autoRefresh, demo]);
+  useEffect(() => {
+    const close = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobile(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 4500);
+    return () => clearTimeout(t);
+  }, [notice]);
+  function navigate(p: string) {
+    detailGeneration.current++;
+    setPriorityFilter("all");
+    setPage(p);
+    setQuery("");
+    setStatus("all");
+    setMinScore(false);
+    setFlowPage(0);
+    setMobile(false);
+    setInv(null);
+    caseGeneration.current++;
+    setSelectedEvent(null);
+    setSelectedFlow(null);
+  }
+  function changeMode(value: boolean) {
+    detailGeneration.current++;
+    mode.current++;
+    caseGeneration.current++;
+    fetching.current = false;
+    setDemo(value);
+    setOffline(!value);
+    setError("");
+    setInv(null);
+    setSelectedFlow(null);
+    setSelectedEvent(null);
+    reports.current.clear();
+    if (value) {
+      demoData.current = createDemo();
+      setData(demoData.current);
+      setLoading(false);
+    } else {
+      setData(null);
+      setLoading(true);
+    }
+  }
+  const filtered = useMemo(() => {
+    if (!data) return null;
+    const cutoff = range === "all" ? 0 : Date.now() - Number(range) * 3600000;
+    return {
+      ...data,
+      flows: data.flows.filter((f) => date(f.timestamp).getTime() >= cutoff),
+      anomalies: data.anomalies.filter(
+        (e) => date(e.created_at).getTime() >= cutoff,
+      ),
+      investigations: data.investigations.filter(
+        (i) => date(i.started_at).getTime() >= cutoff,
+      ),
+    };
+  }, [data, range]);
+  const thresholds = data?.model.thresholds ?? {
+    monitor_at: 0.6,
+    investigate_at: 0.85,
+  };
+  const flows =
+    filtered?.flows.filter((f) =>
+      `${f.flow_id} ${f.src_ip} ${f.dst_ip} ${f.protocol}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    ) ?? [];
+  const anomalies =
+    filtered?.anomalies.filter((e) => {
+      const f = data?.flows.find((f) => f.flow_id === e.flow_id);
+      return (
+        (status === "all" || e.status === status) &&
+        (priorityFilter === "all" ||
+          priority(e.anomaly_score) === priorityFilter) &&
+        (!minScore || e.anomaly_score >= thresholds.investigate_at) &&
+        `${e.event_id} ${e.flow_id} ${f?.src_ip} ${f?.dst_ip}`
+          .toLowerCase()
+          .includes(query.toLowerCase())
+      );
+    }) ?? [];
+  async function action(fn: () => Promise<void>, message: string) {
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await fn();
+      setNotice(message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+  async function loadCase(i: Investigation, p = "Investigations") {
+    const generation = ++caseGeneration.current;
+    setInv(i);
+    setPage(p);
+    setSelectedEvent(null);
+    setEv([]);
+    setRep(null);
+    setCaseLoading(true);
+    try {
+      const [e, r] = await Promise.all([
+        demo
+          ? Promise.resolve(demoEvidence(i, data ?? undefined))
+          : api.evidence(i.investigation_id),
+        demo
+          ? Promise.resolve(
+              reports.current.get(i.investigation_id) ??
+                demoReport(
+                  i,
+                  data?.anomalies.find((a) => a.event_id === i.event_id),
+                ),
+            )
+          : api.report(i.investigation_id).catch((err) => {
+              if (err.message === "report not found") return null;
+              throw err;
+            }),
+      ]);
+      if (generation !== caseGeneration.current) return;
+      setEv(e);
+      setRep(r);
+    } catch (e) {
+      if (generation === caseGeneration.current)
+        setError(e instanceof Error ? e.message : "Unable to load case");
+    } finally {
+      if (generation === caseGeneration.current) setCaseLoading(false);
+    }
+  }
+  function runInvestigation(e: Anomaly) {
+    void action(
+      async () => {
+        let i: Investigation;
+        if (demo) {
+          i = data!.investigations.find((i) => i.event_id === e.event_id) ?? {
+            investigation_id: `INV-DEMO-${e.event_id.slice(4)}`,
+            event_id: e.event_id,
+            state: "done",
+            started_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            outcome: "Demo investigation complete",
+          };
+          if (
+            !data!.investigations.some(
+              (x) => x.investigation_id === i.investigation_id,
+            )
+          ) {
+            const next = {
+              ...data!,
+              investigations: [i, ...data!.investigations],
+            };
+            demoData.current = next;
+            setData(next);
+          }
+        } else {
+          i = await api.investigate(e.event_id);
+          const next = await api.snapshot();
+          setData(next);
+        }
+        await loadCase(i);
+      },
+      demo ? "Demo investigation opened" : "Investigation complete",
+    );
+  }
+  function reviewReport(s: string) {
+    if (!rep) return;
+    void action(async () => {
+      if (demo) {
+        const next = { ...rep, reviewer_status: s };
+        reports.current.set(inv!.investigation_id, next);
+        setRep(next);
+      } else setRep(await api.review(rep.report_id, s));
+    }, `Report ${s}`);
+  }
+  function setEventStatus(s: string) {
+    if (!selectedEvent) return;
+    void action(async () => {
+      if (!demo) await api.triage(selectedEvent.event_id, s);
+      const next = {
+        ...data!,
+        anomalies: data!.anomalies.map((a) =>
+          a.event_id === selectedEvent.event_id ? { ...a, status: s } : a,
+        ),
+      };
+      if (demo) demoData.current = next;
+      setData(next);
+      setSelectedEvent({ ...selectedEvent, status: s });
+    }, "Event status updated");
+  }
+  async function selectEvent(e: Anomaly) {
+    const generation = ++detailGeneration.current;
+    setEventFlow(null);
+    setSelectedEvent(e);
+    const f = data?.flows.find((f) => f.flow_id === e.flow_id);
+    if (f || demo) return;
+    try {
+      const flow = await api.request<Flow>(
+        `/flows/${encodeURIComponent(e.flow_id)}`,
+      );
+      if (generation === detailGeneration.current) setEventFlow(flow);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Flow unavailable");
+    }
+  }
+  const selectedEventFlow =
+    eventFlow ?? data?.flows.find((f) => f.flow_id === selectedEvent?.flow_id);
+  const healthy = !!data && !offline;
+  return (
+    <Tooltip.Provider delayDuration={250}>
+      <div className="app-shell">
+        {mobile && (
+          <button
+            className="mobile-scrim"
+            aria-label="Close navigation"
+            onClick={() => setMobile(false)}
+          />
+        )}
+        <aside className={`sidebar ${mobile ? "visible" : ""}`}>
+          <button
+            className="brand"
+            onClick={() => navigate("Overview")}
+            aria-label="NetSentry Overview"
+          >
+            <span className="brand-mark">
+              <Shield size={26} />
+            </span>
+            <span>
+              NetSentry<span className="brand-ai">AI</span>
+              <small>SECURITY OPERATIONS</small>
+            </span>
+          </button>
+          <div className="workspace-label">
+            <span className="workspace-avatar">N</span>
+            <div>
+              Network workspace<small>Local environment</small>
+            </div>
+            <ChevronDown size={14} />
+          </div>
+          <nav>
+            {nav.map((g) => (
+              <div className="nav-group" key={g.group}>
+                <span>{g.group}</span>
+                {g.items.map(([name, Icon]) => (
+                  <button
+                    key={name}
+                    className={page === name ? "active" : ""}
+                    onClick={() => navigate(name)}
+                  >
+                    <Icon size={18} />
+                    <span>{name}</span>
+                    {name === "Anomalies" &&
+                      !!data?.anomalies.filter((e) => e.status === "open")
+                        .length && (
+                        <b>
+                          {
+                            data.anomalies.filter((e) => e.status === "open")
+                              .length
+                          }
+                        </b>
+                      )}
+                    {name === "Overview" && page === name && <i />}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <div className="sidebar-bottom">
+            <div className="system-state">
+              <span className={`status-dot ${healthy ? "" : "offline"}`} />
+              {demo
+                ? "Demo environment"
+                : healthy
+                  ? "Backend connected"
+                  : "Backend unavailable"}
+              <small>{data?.model.model_version ?? "No active model"}</small>
+            </div>
+            <button className="analyst" onClick={() => navigate("Settings")}>
+              <span>LA</span>
+              <div>
+                Local analyst<small>Security workspace</small>
+              </div>
+              <Settings2 size={16} />
+            </button>
+          </div>
+        </aside>
+        <div className="main-shell">
+          <header className="topbar">
+            <div className="breadcrumb">
+              <IconButton
+                label="Open navigation"
+                onClick={() => setMobile(true)}
+              >
+                <Menu size={18} />
+              </IconButton>
+              <span>Workspace</span>
+              <ChevronRight size={14} />
+              <strong>{page}</strong>
+            </div>
+            <div className="topbar-right">
+              <IconButton
+                label={
+                  demo ? "Switch to live workspace" : "Open demo workspace"
+                }
+                disabled={busy}
+                onClick={() => changeMode(!demo)}
+              >
+                <FlaskConical size={17} />
+              </IconButton>
+              <span className={`live-label ${demo ? "demo-label" : ""}`}>
+                <i />
+                {demo ? "DEMO DATA" : healthy ? "CONNECTED" : "OFFLINE"}
+              </span>
+              <span className="top-divider" />
+              <IconButton
+                label="Open anomaly queue"
+                onClick={() => navigate("Anomalies")}
+              >
+                <Bell size={18} />
+                {!!data?.anomalies.filter((a) => a.status === "open")
+                  .length && <i className="notification-dot" />}
+              </IconButton>
+              <span className="top-avatar">LA</span>
+            </div>
+          </header>
+          <main>
+            <div className="page-heading">
+              <div>
+                <div className="eyebrow">
+                  NETSENTRY AI <span>/</span>{" "}
+                  {page === "Overview" ? "COMMAND CENTER" : page.toUpperCase()}
+                </div>
+                <h1>
+                  {page === "Overview"
+                    ? "Security overview"
+                    : page === "Live Flows"
+                      ? "Live network flows"
+                      : page}
+                </h1>
+                <p>{descriptions[page]}</p>
+              </div>
+              <div className="heading-actions">
+                <label className="time-select">
+                  <Activity size={15} />
+                  <select
+                    aria-label="Time range"
+                    value={range}
+                    onChange={(e) => {
+                      setRange(e.target.value);
+                      setFlowPage(0);
+                    }}
+                  >
+                    <option value="24">Last 24 hours</option>
+                    <option value="168">Last 7 days</option>
+                    <option value="all">All loaded data</option>
+                  </select>
+                </label>
+                <IconButton
+                  label="Refresh data"
+                  disabled={loading || busy}
+                  onClick={() => void refresh()}
+                >
+                  <RefreshCw size={17} className={loading ? "spin" : ""} />
+                </IconButton>
+              </div>
+            </div>
+            <div className="workspace-strip">
+              <div>
+                <span className={`status-dot ${healthy ? "" : "offline"}`} />
+                <span>
+                  {demo
+                    ? "Sample telemetry"
+                    : healthy
+                      ? "Network monitoring"
+                      : "Connection unavailable"}
+                </span>
+                <span className="strip-separator" />
+                <span>
+                  {data?.model.model_version ?? "Detector unavailable"}
+                </span>
+                {data?.model.model_version.includes("stub") && (
+                  <Badge value="heuristic" />
+                )}
+              </div>
+              <span>
+                {lastRefresh
+                  ? `Updated ${lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                  : "Awaiting connection"}
+              </span>
+            </div>
+            {error && (
+              <div className="error-banner" role="alert">
+                <ShieldAlert size={18} />
+                <span>
+                  {error}
+                  {!data && ". Start the backend or open the demo workspace."}
+                </span>
+                <button onClick={() => void refresh()}>Retry</button>
+                {!demo && (
+                  <button onClick={() => changeMode(true)}>Open demo</button>
+                )}
+                <IconButton label="Dismiss error" onClick={() => setError("")}>
+                  <X size={16} />
+                </IconButton>
+              </div>
+            )}
+            {demo && (
+              <div className="demo-banner">
+                <FlaskConical size={16} />
+                <span>
+                  Demo workspace · Sample records · Changes stay in this session
+                </span>
+                <button onClick={() => changeMode(false)}>
+                  Connect to backend <ArrowRight size={14} />
+                </button>
+              </div>
+            )}
+            {data &&
+              (data.flows.length >= 500 ||
+                data.anomalies.length >= 500 ||
+                data.investigations.length >= 500) && (
+                <div className="demo-banner">
+                  Loaded window capped at 500 records per feed. Counts reflect
+                  this window.
+                </div>
+              )}
+            {loading && !data ? (
+              <Empty title="Connecting to NetSentry..." />
+            ) : !filtered ? (
+              <Empty title="Backend unavailable" text="No telemetry loaded." />
+            ) : page === "Overview" ? (
+              <Overview
+                data={filtered}
+                onNavigate={navigate}
+                onSelect={(e) => void selectEvent(e)}
+                onPriority={(p) => {
+                  navigate("Anomalies");
+                  setPriorityFilter(p);
+                }}
+              />
+            ) : page === "Anomalies" ? (
+              <>
+                <div className="threshold-band">
+                  <ShieldAlert size={22} />
+                  <div>
+                    <strong>Detection policy</strong>
+                    <span>Score boundaries</span>
+                  </div>
+                  <span>
+                    <b>&lt; {thresholds.monitor_at.toFixed(2)}</b> Store
+                  </span>
+                  <ArrowRight size={15} />
+                  <span>
+                    <b>
+                      {thresholds.monitor_at.toFixed(2)}–
+                      {thresholds.investigate_at.toFixed(2)}
+                    </b>{" "}
+                    Monitor
+                  </span>
+                  <ArrowRight size={15} />
+                  <span>
+                    <b>≥ {thresholds.investigate_at.toFixed(2)}</b> Investigate
+                  </span>
+                </div>
+                <Panel
+                  title="Anomaly queue"
+                  meta={`${anomalies.length} events in this window`}
+                  action={
+                    <IconButton
+                      label="Export filtered anomalies"
+                      onClick={() =>
+                        download("netsentry-anomalies.json", anomalies)
+                      }
+                    >
+                      <Download size={17} />
+                    </IconButton>
+                  }
+                >
+                  <div className="filter-bar">
+                    <div className="segmented">
+                      {[
+                        "all",
+                        "open",
+                        "monitoring",
+                        "investigating",
+                        "closed",
+                      ].map((s) => (
+                        <button
+                          key={s}
+                          className={status === s ? "selected" : ""}
+                          onClick={() => setStatus(s)}
+                        >
+                          {human(s)}
+                        </button>
+                      ))}
+                    </div>
+                    <SearchBox value={query} onChange={setQuery} />
+                  </div>
+                  <label className="checkbox-label">
+                    <select
+                      aria-label="Detection priority"
+                      className="priority-select"
+                      value={priorityFilter}
+                      onChange={(e) => setPriorityFilter(e.target.value)}
+                    >
+                      {["all", "critical", "high", "medium", "low"].map((p) => (
+                        <option key={p} value={p}>
+                          {p === "all" ? "All priorities" : human(p)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="checkbox"
+                      checked={minScore}
+                      onChange={(e) => setMinScore(e.target.checked)}
+                    />
+                    Score ≥ {thresholds.investigate_at.toFixed(2)}
+                  </label>
+                  <AnomalyTable
+                    events={anomalies}
+                    flows={data!.flows}
+                    onSelect={(e) => void selectEvent(e)}
+                  />
+                </Panel>
+              </>
+            ) : page === "Live Flows" ? (
+              <Panel
+                title="Flow telemetry"
+                meta={`${flows.length} matching flows`}
+                action={
+                  <IconButton
+                    label="Export filtered flows"
+                    onClick={() => download("netsentry-flows.json", flows)}
+                  >
+                    <Download size={17} />
+                  </IconButton>
+                }
+              >
+                <div className="filter-bar">
+                  <SearchBox
+                    value={query}
+                    onChange={(s) => {
+                      setQuery(s);
+                      setFlowPage(0);
+                    }}
+                  />
+                  <span className="muted">{flows.length} records</span>
+                </div>
+                {flows.length ? (
+                  <>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Time</th>
+                            <th>Flow ID</th>
+                            <th>Source</th>
+                            <th>Destination</th>
+                            <th>Protocol</th>
+                            <th>Score</th>
+                            <th>Decision</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {flows
+                            .slice(flowPage * 15, (flowPage + 1) * 15)
+                            .map((f) => (
+                              <tr key={f.flow_id}>
+                                <td className="mono">{time(f.timestamp)}</td>
+                                <td>
+                                  <button
+                                    className="row-link"
+                                    onClick={() => setSelectedFlow(f)}
+                                  >
+                                    {f.flow_id}
+                                  </button>
+                                </td>
+                                <td className="mono">{f.src_ip}</td>
+                                <td className="mono">
+                                  {f.dst_ip}
+                                  <small>Port {f.dst_port}</small>
+                                </td>
+                                <td>
+                                  <span className="protocol">{f.protocol}</span>
+                                </td>
+                                <td className="mono">
+                                  {f.anomaly_score.toFixed(2)}
+                                </td>
+                                <td>
+                                  <Badge
+                                    value={
+                                      f.anomaly_score >=
+                                      thresholds.investigate_at
+                                        ? "investigate"
+                                        : f.anomaly_score >=
+                                            thresholds.monitor_at
+                                          ? "monitoring"
+                                          : "normal"
+                                    }
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="pagination">
+                      <span>
+                        {flowPage * 15 + 1}–
+                        {Math.min(flows.length, (flowPage + 1) * 15)} of{" "}
+                        {flows.length}
+                      </span>
+                      <IconButton
+                        label="Previous page"
+                        disabled={flowPage === 0}
+                        onClick={() => setFlowPage((p) => p - 1)}
+                      >
+                        <ChevronLeft size={16} />
+                      </IconButton>
+                      <IconButton
+                        label="Next page"
+                        disabled={(flowPage + 1) * 15 >= flows.length}
+                        onClick={() => setFlowPage((p) => p + 1)}
+                      >
+                        <ChevronRight size={16} />
+                      </IconButton>
+                    </div>
+                  </>
+                ) : (
+                  <Empty title="No flows found" />
+                )}
+              </Panel>
+            ) : page === "Investigations" || page === "Reports" ? (
+              inv ? (
+                <>
+                  <div className="case-toolbar">
+                    <button
+                      className="text-link"
+                      onClick={() => {
+                        setInv(null);
+                        caseGeneration.current++;
+                      }}
+                    >
+                      <ArrowLeft size={16} />
+                      All {page.toLowerCase()}
+                    </button>
+                    <div className="segmented">
+                      <button
+                        className={page === "Investigations" ? "selected" : ""}
+                        onClick={() => setPage("Investigations")}
+                      >
+                        Workflow
+                      </button>
+                      <button
+                        className={page === "Reports" ? "selected" : ""}
+                        onClick={() => setPage("Reports")}
+                      >
+                        Report
+                      </button>
+                    </div>
+                  </div>
+                  <CaseView
+                    inv={inv}
+                    evidence={ev}
+                    report={rep}
+                    loading={caseLoading}
+                    onReport={page === "Reports"}
+                    onReview={reviewReport}
+                    busy={busy}
+                    event={data?.anomalies.find(
+                      (e) => e.event_id === inv.event_id,
+                    )}
+                    threshold={thresholds.investigate_at}
+                  />
+                </>
+              ) : (
+                <Panel
+                  title={
+                    page === "Reports" ? "Case reports" : "Investigation cases"
+                  }
+                  meta={`${filtered.investigations.length} cases`}
+                >
+                  <div className="filter-bar">
+                    <SearchBox
+                      value={query}
+                      onChange={setQuery}
+                      placeholder="Search investigation or event..."
+                    />
+                  </div>
+                  {filtered.investigations.length ? (
+                    <div className="case-list">
+                      {filtered.investigations
+                        .filter((i) =>
+                          `${i.investigation_id} ${i.event_id}`
+                            .toLowerCase()
+                            .includes(query.toLowerCase()),
+                        )
+                        .map((i) => (
+                          <button
+                            className="case-row"
+                            key={i.investigation_id}
+                            onClick={() => void loadCase(i, page)}
+                          >
+                            <span className="case-icon">
+                              {page === "Reports" ? (
+                                <FileText size={21} />
+                              ) : (
+                                <Workflow size={21} />
+                              )}
+                            </span>
+                            <div>
+                              <strong>{i.investigation_id}</strong>
+                              <small>{i.event_id}</small>
+                            </div>
+                            <span className="muted">
+                              {date(i.started_at).toLocaleDateString()} ·{" "}
+                              {time(i.started_at)}
+                            </span>
+                            <Badge value={i.state} />
+                            <ArrowRight size={17} />
+                          </button>
+                        ))}
+                    </div>
+                  ) : (
+                    <Empty
+                      title="No investigation cases yet"
+                      text="Open an anomaly to start an investigation."
+                    />
+                  )}
+                </Panel>
+              )
+            ) : page === "Traffic Analytics" ? (
+              <TrafficAnalytics
+                data={filtered}
+                onSource={(ip) => {
+                  navigate("Live Flows");
+                  setQuery(ip);
+                }}
+              />
+            ) : page === "Model" ? (
+              <div className="system-grid">
+                <Panel title="Active detector" meta={human(data!.model.model)}>
+                  <dl className="facts">
+                    <div>
+                      <dt>Version</dt>
+                      <dd>{data!.model.model_version}</dd>
+                    </div>
+                    <div>
+                      <dt>Mode</dt>
+                      <dd>
+                        {demo
+                          ? "Demo"
+                          : data!.model.model_version.includes("stub")
+                            ? "Heuristic fallback"
+                            : "Model artifact"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Monitor boundary</dt>
+                      <dd>{thresholds.monitor_at.toFixed(2)}</dd>
+                    </div>
+                    <div>
+                      <dt>Investigate boundary</dt>
+                      <dd>{thresholds.investigate_at.toFixed(2)}</dd>
+                    </div>
+                  </dl>
+                  <div className="threshold-note">
+                    <span>Detection chain</span>
+                    <p>
+                      Network flows → Features → Detector → Anomaly events →
+                      Evidence → Risk → Report → Analyst review
+                    </p>
+                  </div>
+                </Panel>
+                <Panel
+                  title="Feature contract"
+                  meta={`${data!.model.feature_order.length} input features`}
+                >
+                  <div className="feature-list">
+                    {data!.model.feature_order.map((f, i) => (
+                      <div key={f}>
+                        <span>{String(i + 1).padStart(2, "0")}</span>
+                        <code>{f}</code>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              </div>
+            ) : page === "Privacy Policy" ? (
+              <PrivacyPolicy />
+            ) : page === "API Health" ? (
+              <div className="system-grid">
+                <Panel title="Backend service">
+                  <dl className="facts">
+                    <div>
+                      <dt>API status</dt>
+                      <dd>
+                        <Badge value={healthy ? "online" : "offline"} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Detector version</dt>
+                      <dd>{data!.health.model}</dd>
+                    </div>
+                    <div>
+                      <dt>LLM enhancement</dt>
+                      <dd>
+                        <Badge
+                          value={
+                            data!.health.llm_enabled ? "enabled" : "disabled"
+                          }
+                        />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>LLM model</dt>
+                      <dd>{data!.health.llm_model}</dd>
+                    </div>
+                    <div>
+                      <dt>Last response</dt>
+                      <dd>{lastRefresh?.toLocaleTimeString()}</dd>
+                    </div>
+                  </dl>
+                </Panel>
+                <Panel title="Investigation services">
+                  <dl className="facts">
+                    <div>
+                      <dt>Evidence collection</dt>
+                      <dd>Read-only tools</dd>
+                    </div>
+                    <div>
+                      <dt>Risk assessment</dt>
+                      <dd>Deterministic</dd>
+                    </div>
+                    <div>
+                      <dt>Reports</dt>
+                      <dd>
+                        {data!.health.llm_enabled
+                          ? "LLM enhanced"
+                          : "Rule-based synthesis"}
+                      </dd>
+                    </div>
+                  </dl>
+                </Panel>
+              </div>
+            ) : (
+              <div className="system-grid">
+                <Panel title="Workspace preferences">
+                  <div className="setting-row">
+                    <div>
+                      <strong>Automatic refresh</strong>
+                      <small>15 seconds</small>
+                    </div>
+                    <input
+                      aria-label="Automatic refresh"
+                      role="switch"
+                      type="checkbox"
+                      checked={autoRefresh}
+                      onChange={(e) => setAutoRefresh(e.target.checked)}
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div>
+                      <strong>Demo workspace</strong>
+                      <small>Sample data</small>
+                    </div>
+                    <input
+                      aria-label="Demo workspace"
+                      disabled={busy}
+                      role="switch"
+                      type="checkbox"
+                      checked={demo}
+                      onChange={(e) => changeMode(e.target.checked)}
+                    />
+                  </div>
+                </Panel>
+                <Panel title="Display">
+                  <dl className="facts">
+                    <div>
+                      <dt>Theme</dt>
+                      <dd>Dark</dd>
+                    </div>
+                    <div>
+                      <dt>Time zone</dt>
+                      <dd>
+                        {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Loaded feed limit</dt>
+                      <dd>500 records</dd>
+                    </div>
+                  </dl>
+                </Panel>
+              </div>
+            )}
+            <footer>
+              <span>
+                <Shield size={13} />
+                NetSentry AI <span> / </span> Security operations workspace
+              </span>
+              <button onClick={() => navigate("Model")}>
+                Detection & evidence <CircleHelp size={13} />
+              </button>
+              <button onClick={() => navigate("Privacy Policy")}>
+                Privacy policy
+              </button>
+            </footer>
+          </main>
+        </div>
+        <Drawer
+          open={!!selectedFlow || !!selectedEvent}
+          onClose={() => {
+            setSelectedFlow(null);
+            setSelectedEvent(null);
+          }}
+          title={selectedEvent?.event_id ?? selectedFlow?.flow_id ?? "Details"}
+          description={
+            selectedEvent ? "Anomaly event details" : "Network flow details"
+          }
+        >
+          {(selectedFlow || selectedEventFlow) && (
+            <>
+              <dl className="facts">
+                <div>
+                  <dt>Source</dt>
+                  <dd className="mono">
+                    {(selectedFlow ?? selectedEventFlow)!.src_ip}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Destination</dt>
+                  <dd className="mono">
+                    {(selectedFlow ?? selectedEventFlow)!.dst_ip}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Port / protocol</dt>
+                  <dd>
+                    {(selectedFlow ?? selectedEventFlow)!.dst_port} /{" "}
+                    {(selectedFlow ?? selectedEventFlow)!.protocol}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Flow</dt>
+                  <dd className="mono">
+                    {(selectedFlow ?? selectedEventFlow)!.flow_id}
+                  </dd>
+                </div>
+              </dl>
+              <ScoreGauge
+                score={
+                  selectedEvent?.anomaly_score ?? selectedFlow!.anomaly_score
+                }
+                monitor={thresholds.monitor_at}
+                investigate={thresholds.investigate_at}
+              />
+              <h3 className="detail-heading">Observed features</h3>
+              <dl className="facts feature-facts">
+                {Object.entries(
+                  (selectedFlow ?? selectedEventFlow)!.features,
+                ).map(([k, v]) => (
+                  <div key={k}>
+                    <dt>{featureName(k)}</dt>
+                    <dd>{featureValue(k, v)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          )}
+          {selectedEvent && (
+            <div className="drawer-actions">
+              <label>
+                Event status
+                <select
+                  aria-label="Event status"
+                  value={selectedEvent.status}
+                  disabled={busy}
+                  onChange={(e) => setEventStatus(e.target.value)}
+                >
+                  {["open", "monitoring", "investigating", "closed"].map(
+                    (s) => (
+                      <option key={s} value={s}>
+                        {human(s)}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <button
+                className="button primary"
+                disabled={busy}
+                onClick={() => runInvestigation(selectedEvent)}
+              >
+                {busy ? (
+                  <LoaderCircle size={17} className="spin" />
+                ) : (
+                  <Workflow size={17} />
+                )}
+                Investigate event
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          )}
+          {selectedFlow &&
+            data?.anomalies.find((a) => a.flow_id === selectedFlow.flow_id) && (
+              <div className="drawer-actions">
+                <button
+                  className="button primary"
+                  onClick={() => {
+                    const event = data.anomalies.find(
+                      (a) => a.flow_id === selectedFlow.flow_id,
+                    )!;
+                    setSelectedFlow(null);
+                    void selectEvent(event);
+                  }}
+                >
+                  <ShieldAlert size={17} />
+                  View anomaly
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+            )}
+        </Drawer>
+        {notice && (
+          <div className="toast" role="status">
+            <Check size={17} />
+            {notice}
+          </div>
+        )}
+      </div>
+    </Tooltip.Provider>
+  );
+}
+
+function PrivacyPolicy() {
+  return (
+    <div className="privacy-page">
+      <Panel title="Privacy policy" meta="For the current self-hosted console">
+        <div className="privacy-copy">
+          <section>
+            <h3>Browser and API</h3>
+            <p>
+              The console sends requests to the NetSentry API at the same origin.
+              It does not include analytics, advertising, or tracking scripts,
+              and it does not save telemetry in browser storage.
+            </p>
+          </section>
+          <section>
+            <h3>Network and investigation data</h3>
+            <p>
+              Flow records, anomaly events, evidence, and reports are handled by
+              the backend configured for this installation. The deployment
+              operator controls its database, access, and retention. Optional
+              language-model or threat-intelligence integrations may send data
+              to the providers configured on that backend.
+            </p>
+          </section>
+          <section>
+            <h3>Demo and exports</h3>
+            <p>
+              Demo records are generated in the browser for the current session
+              and are not submitted to the backend. JSON exports are created
+              only when an analyst requests a download.
+            </p>
+          </section>
+          <section>
+            <h3>Deployment scope</h3>
+            <p>
+              NetSentry is self-hosted software, not a centrally operated web
+              service. The organization operating an installation is responsible
+              for its deployment-specific privacy notice and legal obligations.
+              This page describes the current console behavior and should be
+              reviewed before exposing an installation publicly.
+            </p>
+          </section>
+        </div>
+      </Panel>
+    </div>
+  );
+}

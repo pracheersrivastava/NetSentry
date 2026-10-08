@@ -151,6 +151,17 @@ def _node_initial(s: Session, state: InvestigationState) -> InvestigationState:
 
 
 def _node_tools(s: Session, inv_id: str, state: InvestigationState) -> InvestigationState:
+    if state.get("rounds", 0) == 0:
+        repo.add_evidence(s, {
+            "evidence_id": f"EV-{uuid.uuid4().hex[:8].upper()}",
+            "investigation_id": inv_id,
+            "source_tool": "feature_attribution",
+            "evidence_type": "initial_analysis",
+            "payload": {
+                "attributions": state.get("feature_attributions", []),
+                "hypotheses": state.get("hypotheses", []),
+            },
+        })
     plan = select_next_tools(state)
     for tool_name, args in plan[:10]:
         result = run_tool(s, inv_id, tool_name, args)

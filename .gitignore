@@ -30,3 +30,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+node_modules/
+frontend/dist/
+.runtime/
+.npm-cache/
+*.tsbuildinfo

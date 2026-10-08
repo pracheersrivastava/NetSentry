@@ -1,22 +1,22 @@
-# NetSentry AI 🛡️🤖
+# NetSentry AI
 
 > **Intelligent Network Anomaly Detection and Evidence-Grounded Agentic Investigation System**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-FF6F00.svg)](https://langchain-ai.github.io/langgraph/)
-[![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B.svg)](https://streamlit.io/)
+[![React](https://img.shields.io/badge/Console-React-149ECA.svg)](https://react.dev/)
 [![Scikit-Learn](https://img.shields.io/badge/ML-Scikit--Learn-F7931E.svg)](https://scikit-learn.org/)
 [![Docker](https://img.shields.io/badge/Deployment-Docker-2496ED.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 📌 Executive Summary
+## Executive Summary
 
 **NetSentry AI** is an end-to-end intelligent network monitoring and security investigation platform. The system continuously observes network traffic, transforms raw packets into structured flow records, extracts statistical and behavioral features, identifies abnormal traffic patterns using machine learning, and initiates an **evidence-driven agentic investigation** whenever an anomaly crosses a configurable threshold.
 
-### ⚖️ Core Philosophy: Separation of Responsibilities
+### Core Philosophy: Separation of Responsibilities
 
 Traditional security tools often suffer from alert fatigue without clear context, while naive LLM implementations hallucinate non-existent threats. NetSentry AI solves this with strict separation of concerns:
 
@@ -25,7 +25,7 @@ Traditional security tools often suffer from alert fatigue without clear context
 
 ---
 
-## 🏗️ High-Level System Architecture
+## High-Level System Architecture
 
 ```mermaid
 flowchart TD
@@ -50,7 +50,7 @@ flowchart TD
     J --> K[Automated Incident Report Generator]
     K --> L[(Database: SQLite / PostgreSQL)]
     L --> M[FastAPI Backend Services]
-    M --> N[Streamlit Interactive Dashboard]
+    M --> N[React Analyst Console]
 ```
 
 ### End-to-End Pipeline Overview
@@ -66,7 +66,7 @@ flowchart TD
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```text
 NetSentry AI/
@@ -123,11 +123,11 @@ NetSentry AI/
 
 ---
 
-## 🛠️ Tech Stack & Key Technologies
+## Tech Stack & Key Technologies
 
 | Layer | Recommended Choice | Alternatives |
 | :--- | :--- | :--- |
-| **Language** | Python 3.10+ | — |
+| **Language** | Python 3.10+ | Not applicable |
 | **Traffic Telemetry** | Zeek, Scapy, TShark / PyShark | CICFlowMeter, Argus |
 | **Data Processing** | Pandas, NumPy | Polars |
 | **ML Engine** | scikit-learn (Isolation Forest) | PyTorch (Autoencoder), XGBoost |
@@ -135,12 +135,12 @@ NetSentry AI/
 | **LLM Provider** | Tool-calling capable LLMs (Gemini / OpenAI / Claude / Ollama) | Local vLLM / HuggingFace |
 | **Backend API** | FastAPI + Uvicorn | Flask |
 | **Database** | PostgreSQL (Production) / SQLite (MVP) | DuckDB |
-| **Dashboard** | Streamlit | React / Next.js |
+| **Dashboard** | React, Vite, TypeScript | Streamlit (legacy) |
 | **Packaging** | Docker, Docker Compose | Virtualenv |
 
 ---
 
-## 🧠 Machine Learning & Telemetry Specifications
+## Machine Learning & Telemetry Specifications
 
 ### Example Normalized Flow Record
 
@@ -175,7 +175,7 @@ NetSentry AI/
 
 ---
 
-## 🕵️ Agentic AI Investigation Workflow (LangGraph)
+## Agentic AI Investigation Workflow (LangGraph)
 
 When an event exceeds the configured anomaly score threshold (e.g., score $\ge 0.85$), an investigation instance is triggered.
 
@@ -202,7 +202,7 @@ class InvestigationState(TypedDict):
 5. **`lookup_dns(domain)`**: Resolves domain records and correlated queries.
 6. **`lookup_reputation(indicator)`**: (Optional) Enriches external public indicators via read-only threat feeds.
 
-### 🛡️ Evidence Grounding & Hallucination Defense
+### Evidence Grounding & Hallucination Defense
 
 - **Zero Fabricated Evidence**: Raw tool execution logs are stored side-by-side with LLM outputs.
 - **Fact vs. Hypothesis Separation**: Incident reports explicitly demarcate **Observed Facts** (verifiable data) from **Analytical Hypotheses**.
@@ -210,7 +210,7 @@ class InvestigationState(TypedDict):
 
 ---
 
-## 📊 Database Schema
+## Database Schema
 
 ```mermaid
 erDiagram
@@ -290,7 +290,7 @@ erDiagram
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -339,7 +339,7 @@ python scripts/seed.py
 
 ---
 
-## 💻 Running the Application
+## Running the Application
 
 ### 1. Offline PCAP Ingestion & Model Scoring (Quickstart)
 
@@ -361,12 +361,14 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 Interactive Swagger UI will be available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
-### 3. Launch Streamlit SOC Dashboard
+### 3. Launch the React SOC Console
 
-```bash
-streamlit run dashboard/app.py
+```powershell
+cd frontend
+npm install
+npm run dev
 ```
-Open [http://localhost:8501](http://localhost:8501) to explore live monitoring, anomaly logs, agent traces, and incident reports.
+Open [http://localhost:5173](http://localhost:5173) to use the analyst console. The legacy Streamlit dashboard remains available with `streamlit run dashboard/app.py`.
 
 ### 4. Running with Docker Compose
 
@@ -376,19 +378,19 @@ docker compose -f docker/docker-compose.yml up --build
 # (local dev without Docker: uvicorn api.main:app --port 8000)
 ```
 
-### 5. Demo script (3 minutes)
+### 5. Demo script
 
 ```bash
 python scripts/seed.py
 uvicorn api.main:app --port 8000          # terminal 1
-streamlit run dashboard/app.py            # terminal 2
+cd frontend; npm install; npm run dev     # terminal 2
 # browser 1: http://localhost:8000/docs -> POST /investigations/{ANM-xxx from seed}
-# browser 2: http://localhost:8501 -> Anomalies -> Investigate -> Investigations -> Report
+# browser 2: http://localhost:5173 -> Anomalies -> Investigate -> Investigations -> Report
 ```
 
 ---
 
-## 📡 API Reference
+## API Reference
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
@@ -404,7 +406,7 @@ streamlit run dashboard/app.py            # terminal 2
 
 ---
 
-## 📈 Evaluation & Benchmark Metrics
+## Evaluation & Benchmark Metrics
 
 ### ML Layer Evaluation
 - **Precision, Recall & F1-Score**: Evaluated against labeled benchmarks (CIC-IDS2017 / UNSW-NB15).
@@ -421,7 +423,7 @@ streamlit run dashboard/app.py            # terminal 2
 
 ---
 
-## 🗺️ Roadmap & Milestones
+## Roadmap & Milestones
 
 - [x] Architecture design & formal project specification
 - [ ] Flow capture and normalization engine (Zeek & Scapy)
@@ -431,12 +433,12 @@ streamlit run dashboard/app.py            # terminal 2
 - [ ] LangGraph state machine & read-only investigation tools
 - [ ] Evidence-grounded report generator with JSON schema validation
 - [ ] FastAPI backend services & SQLite/PostgreSQL persistence
-- [ ] Streamlit SOC analyst dashboard
+- [x] React SOC analyst console
 - [ ] Dockerized deployment & automated end-to-end benchmark suite
 
 ---
 
-## 🔒 Security, Safety, and Ethical Scope
+## Security, Safety, and Ethical Scope
 
 > **Important**: NetSentry AI is designed strictly for **authorized defensive monitoring and educational/research purposes**.
 > 
@@ -446,6 +448,6 @@ streamlit run dashboard/app.py            # terminal 2
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).

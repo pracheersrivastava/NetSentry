@@ -294,7 +294,7 @@ export default function Overview({
         </Panel>
         <Panel
           title="Investigation pipeline"
-          meta="From detection to analyst review"
+          meta="From detection to completed report"
         >
           <div className="pipeline">
             {[
@@ -312,8 +312,8 @@ export default function Overview({
               },
               {
                 icon: FileCheck2,
-                title: "Review",
-                label: `${data.investigations.filter((i) => i.state === "done").length} completed cases`,
+                title: "Reports",
+                label: `${data.investigations.filter((i) => i.state === "done").length} reports generated`,
                 tone: "blue",
               },
             ].map((s, i) => (

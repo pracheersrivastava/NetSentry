@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
   Download,
   FileText,
   FlaskConical,
@@ -23,6 +22,7 @@ import {
   Settings2,
   Shield,
   ShieldAlert,
+  Upload,
   Workflow,
   X,
 } from "lucide-react";
@@ -35,7 +35,6 @@ import type {
   Snapshot,
 } from "./types";
 import * as api from "./api";
-import { createDemo, demoEvidence, demoReport } from "./demo";
 import {
   Badge,
   Drawer,
@@ -61,7 +60,8 @@ const nav = [
     group: "WORKSPACE",
     items: [
       ["Overview", LayoutDashboard],
-      ["Live Flows", Network],
+      ["Flow Records", Network],
+      ["Import Flows", Upload],
       ["Traffic Analytics", Activity],
     ],
   },
@@ -90,7 +90,8 @@ const nav = [
 ] as const;
 const descriptions: Record<string, string> = {
   Overview: "Flow scores, detection thresholds, and evidence-led cases.",
-  "Live Flows": "Network telemetry and detection signals.",
+  "Flow Records": "Previously ingested network telemetry and detection signals.",
+  "Import Flows": "Submit normalized flow records to the detector.",
   "Traffic Analytics": "Traffic patterns across the loaded telemetry window.",
   Anomalies: "Prioritize signals. Investigate what matters.",
   Investigations: "Evidence-led investigation, from signal to assessment.",
@@ -100,9 +101,38 @@ const descriptions: Record<string, string> = {
   Settings: "Workspace and refresh preferences.",
   "Privacy Policy": "How this self-hosted console handles telemetry.",
 };
+
+async function readFlowFile(file: File): Promise<api.FlowImport[]> {
+  if (!/\.(json|jsonl|ndjson)$/i.test(file.name)) {
+    throw new Error("Choose a .json, .jsonl, or .ndjson flow file");
+  }
+  if (file.size > 10 * 1024 * 1024) throw new Error("Files are limited to 10 MB");
+  const text = await file.text();
+  const rows = /\.(jsonl|ndjson)$/i.test(file.name)
+    ? text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line))
+    : (() => {
+        const parsed = JSON.parse(text);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      })();
+  if (!rows.length) throw new Error("The file contains no flow records");
+  if (rows.length > 500) throw new Error("Import up to 500 flows at a time");
+  for (const [index, row] of rows.entries()) {
+    if (
+      !row ||
+      typeof row !== "object" ||
+      typeof row.src_ip !== "string" ||
+      typeof row.dst_ip !== "string" ||
+      !Number.isInteger(row.src_port) ||
+      !Number.isInteger(row.dst_port)
+    ) {
+      throw new Error(`Record ${index + 1} needs src_ip, dst_ip, src_port, and dst_port`);
+    }
+  }
+  return rows as api.FlowImport[];
+}
+
 export default function App() {
   const [page, setPage] = useState("Overview"),
-    [demo, setDemo] = useState(false),
     [data, setData] = useState<Snapshot | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
@@ -122,12 +152,12 @@ export default function App() {
     [mobile, setMobile] = useState(false),
     [autoRefresh, setAutoRefresh] = useState(true),
     [notice, setNotice] = useState("");
-  const mode = useRef(0),
-    caseGeneration = useRef(0),
+  const [importResult, setImportResult] = useState<{ filename: string; results: api.IngestResult[] } | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState("");
+  const caseGeneration = useRef(0),
     fetching = useRef(false),
-    busyRef = useRef(false),
-    reports = useRef(new Map<string, Report>()),
-    demoData = useRef<Snapshot | null>(null);
+    busyRef = useRef(false);
   const [offline, setOffline] = useState(true);
   const [eventFlow, setEventFlow] = useState<Flow | null>(null);
   const detailGeneration = useRef(0);
@@ -135,30 +165,27 @@ export default function App() {
   const refresh = useCallback(async () => {
     if (fetching.current || busyRef.current) return;
     fetching.current = true;
-    const generation = mode.current;
     try {
-      const next = demo ? demoData.current! : await api.snapshot();
-      if (generation !== mode.current || busyRef.current) return;
+      const next = await api.snapshot();
+      if (busyRef.current) return;
       setData(next);
       setLastRefresh(new Date());
       setError("");
       setOffline(false);
     } catch (e) {
-      if (generation === mode.current) {
-        setError(e instanceof Error ? e.message : "Unable to reach backend");
-        setOffline(true);
-      }
+      setError(e instanceof Error ? e.message : "Unable to reach backend");
+      setOffline(true);
     } finally {
       fetching.current = false;
-      if (generation === mode.current) setLoading(false);
+      setLoading(false);
     }
-  }, [demo]);
+  }, []);
   useEffect(() => {
     void refresh();
-    if (!autoRefresh || demo) return;
+    if (!autoRefresh) return;
     const t = setInterval(() => void refresh(), 15000);
     return () => clearInterval(t);
-  }, [refresh, autoRefresh, demo]);
+  }, [refresh, autoRefresh]);
   useEffect(() => {
     const close = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMobile(false);
@@ -184,27 +211,6 @@ export default function App() {
     caseGeneration.current++;
     setSelectedEvent(null);
     setSelectedFlow(null);
-  }
-  function changeMode(value: boolean) {
-    detailGeneration.current++;
-    mode.current++;
-    caseGeneration.current++;
-    fetching.current = false;
-    setDemo(value);
-    setOffline(!value);
-    setError("");
-    setInv(null);
-    setSelectedFlow(null);
-    setSelectedEvent(null);
-    reports.current.clear();
-    if (value) {
-      demoData.current = createDemo();
-      setData(demoData.current);
-      setLoading(false);
-    } else {
-      setData(null);
-      setLoading(true);
-    }
   }
   const filtered = useMemo(() => {
     if (!data) return null;
@@ -266,21 +272,11 @@ export default function App() {
     setCaseLoading(true);
     try {
       const [e, r] = await Promise.all([
-        demo
-          ? Promise.resolve(demoEvidence(i, data ?? undefined))
-          : api.evidence(i.investigation_id),
-        demo
-          ? Promise.resolve(
-              reports.current.get(i.investigation_id) ??
-                demoReport(
-                  i,
-                  data?.anomalies.find((a) => a.event_id === i.event_id),
-                ),
-            )
-          : api.report(i.investigation_id).catch((err) => {
-              if (err.message === "report not found") return null;
-              throw err;
-            }),
+        api.evidence(i.investigation_id),
+        api.report(i.investigation_id).catch((err) => {
+          if (err.message === "report not found") return null;
+          throw err;
+        }),
       ]);
       if (generation !== caseGeneration.current) return;
       setEv(e);
@@ -295,59 +291,30 @@ export default function App() {
   function runInvestigation(e: Anomaly) {
     void action(
       async () => {
-        let i: Investigation;
-        if (demo) {
-          i = data!.investigations.find((i) => i.event_id === e.event_id) ?? {
-            investigation_id: `INV-DEMO-${e.event_id.slice(4)}`,
-            event_id: e.event_id,
-            state: "done",
-            started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-            outcome: "Demo investigation complete",
-          };
-          if (
-            !data!.investigations.some(
-              (x) => x.investigation_id === i.investigation_id,
-            )
-          ) {
-            const next = {
-              ...data!,
-              investigations: [i, ...data!.investigations],
-            };
-            demoData.current = next;
-            setData(next);
-          }
-        } else {
-          i = await api.investigate(e.event_id);
-          const next = await api.snapshot();
-          setData(next);
-        }
+        const i = await api.investigate(e.event_id);
+        const next = await api.snapshot();
+        setData(next);
         await loadCase(i);
       },
-      demo ? "Demo investigation opened" : "Investigation complete",
+      "Investigation complete",
     );
   }
   function reviewReport(s: string) {
     if (!rep) return;
     void action(async () => {
-      if (demo) {
-        const next = { ...rep, reviewer_status: s };
-        reports.current.set(inv!.investigation_id, next);
-        setRep(next);
-      } else setRep(await api.review(rep.report_id, s));
+      setRep(await api.review(rep.report_id, s));
     }, `Report ${s}`);
   }
   function setEventStatus(s: string) {
     if (!selectedEvent) return;
     void action(async () => {
-      if (!demo) await api.triage(selectedEvent.event_id, s);
+      await api.triage(selectedEvent.event_id, s);
       const next = {
         ...data!,
         anomalies: data!.anomalies.map((a) =>
           a.event_id === selectedEvent.event_id ? { ...a, status: s } : a,
         ),
       };
-      if (demo) demoData.current = next;
       setData(next);
       setSelectedEvent({ ...selectedEvent, status: s });
     }, "Event status updated");
@@ -357,7 +324,7 @@ export default function App() {
     setEventFlow(null);
     setSelectedEvent(e);
     const f = data?.flows.find((f) => f.flow_id === e.flow_id);
-    if (f || demo) return;
+    if (f) return;
     try {
       const flow = await api.request<Flow>(
         `/flows/${encodeURIComponent(e.flow_id)}`,
@@ -370,6 +337,22 @@ export default function App() {
   const selectedEventFlow =
     eventFlow ?? data?.flows.find((f) => f.flow_id === selectedEvent?.flow_id);
   const healthy = !!data && !offline;
+  async function importFlowFile(file?: File) {
+    if (!file) return;
+    setImportBusy(true);
+    setImportError("");
+    setImportResult(null);
+    try {
+      const flows = await readFlowFile(file);
+      const results = await api.importFlows(flows);
+      setImportResult({ filename: file.name, results });
+      await refresh();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Flow import failed");
+    } finally {
+      setImportBusy(false);
+    }
+  }
   return (
     <Tooltip.Provider delayDuration={250}>
       <div className="app-shell">
@@ -432,20 +415,9 @@ export default function App() {
           <div className="sidebar-bottom">
             <div className="system-state">
               <span className={`status-dot ${healthy ? "" : "offline"}`} />
-              {demo
-                ? "Demo environment"
-                : healthy
-                  ? "Backend connected"
-                  : "Backend unavailable"}
+              {healthy ? "Backend connected" : "Backend unavailable"}
               <small>{data?.model.model_version ?? "No active model"}</small>
             </div>
-            <button className="analyst" onClick={() => navigate("Settings")}>
-              <span>LA</span>
-              <div>
-                Local analyst<small>Security workspace</small>
-              </div>
-              <Settings2 size={16} />
-            </button>
           </div>
         </aside>
         <div className="main-shell">
@@ -462,18 +434,9 @@ export default function App() {
               <strong>{page}</strong>
             </div>
             <div className="topbar-right">
-              <IconButton
-                label={
-                  demo ? "Switch to live workspace" : "Open demo workspace"
-                }
-                disabled={busy}
-                onClick={() => changeMode(!demo)}
-              >
-                <FlaskConical size={17} />
-              </IconButton>
-              <span className={`live-label ${demo ? "demo-label" : ""}`}>
+              <span className="live-label">
                 <i />
-                {demo ? "DEMO DATA" : healthy ? "CONNECTED" : "OFFLINE"}
+                {healthy ? "CONNECTED" : "OFFLINE"}
               </span>
               <span className="top-divider" />
               <IconButton
@@ -484,7 +447,6 @@ export default function App() {
                 {!!data?.anomalies.filter((a) => a.status === "open")
                   .length && <i className="notification-dot" />}
               </IconButton>
-              <span className="top-avatar">LA</span>
             </div>
           </header>
           <main>
@@ -497,8 +459,8 @@ export default function App() {
                 <h1>
                   {page === "Overview"
                     ? "Security overview"
-                    : page === "Live Flows"
-                      ? "Live network flows"
+                    : page === "Flow Records"
+                      ? "Ingested flow records"
                       : page}
                 </h1>
                 <p>{descriptions[page]}</p>
@@ -532,10 +494,8 @@ export default function App() {
               <div>
                 <span className={`status-dot ${healthy ? "" : "offline"}`} />
                 <span>
-                  {demo
-                    ? "Sample telemetry"
-                    : healthy
-                      ? "Network monitoring"
+                  {healthy
+                    ? "Flow telemetry connected"
                       : "Connection unavailable"}
                 </span>
                 <span className="strip-separator" />
@@ -557,33 +517,19 @@ export default function App() {
                 <ShieldAlert size={18} />
                 <span>
                   {error}
-                  {!data && ". Start the backend or open the demo workspace."}
+                  {!data && ". Start the backend."}
                 </span>
                 <button onClick={() => void refresh()}>Retry</button>
-                {!demo && (
-                  <button onClick={() => changeMode(true)}>Open demo</button>
-                )}
                 <IconButton label="Dismiss error" onClick={() => setError("")}>
                   <X size={16} />
                 </IconButton>
-              </div>
-            )}
-            {demo && (
-              <div className="demo-banner">
-                <FlaskConical size={16} />
-                <span>
-                  Demo workspace · Sample records · Changes stay in this session
-                </span>
-                <button onClick={() => changeMode(false)}>
-                  Connect to backend <ArrowRight size={14} />
-                </button>
               </div>
             )}
             {data &&
               (data.flows.length >= 500 ||
                 data.anomalies.length >= 500 ||
                 data.investigations.length >= 500) && (
-                <div className="demo-banner">
+                <div className="notice-banner">
                   Loaded window capped at 500 records per feed. Counts reflect
                   this window.
                 </div>
@@ -592,6 +538,29 @@ export default function App() {
               <Empty title="Connecting to NetSentry..." />
             ) : !filtered ? (
               <Empty title="Backend unavailable" text="No telemetry loaded." />
+            ) : page === "Import Flows" ? (
+              <div className="flow-import-layout">
+                <Panel title="Import flow records" meta="JSON · JSONL · 500 records max">
+                  <div className="flow-upload">
+                    <Upload size={22} />
+                    <div>
+                      <strong>Submit normalized records to the detector</strong>
+                      <p>Use a JSON array or one JSON record per line. Required fields: src_ip, dst_ip, src_port, dst_port.</p>
+                    </div>
+                    <label className="flow-import-button">
+                      {importBusy ? "Importing..." : "Choose file"}
+                      <input type="file" accept=".json,.jsonl,.ndjson" disabled={importBusy} onChange={(e) => { void importFlowFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                    </label>
+                  </div>
+                  {importError && <div className="error-banner" role="alert">{importError}</div>}
+                  {importResult && <div className="import-result" role="status">
+                    <strong>{importResult.filename}</strong>
+                    <span>{importResult.results.length.toLocaleString()} flows scored</span>
+                    <span>{importResult.results.filter((flow) => flow.event_id).length.toLocaleString()} anomaly events created</span>
+                  </div>}
+                </Panel>
+                <p className="flow-import-limitation">PCAP parsing and network-interface capture are not available. Flow Records lists telemetry already ingested by the API.</p>
+              </div>
             ) : page === "Overview" ? (
               <Overview
                 data={filtered}
@@ -687,7 +656,7 @@ export default function App() {
                   />
                 </Panel>
               </>
-            ) : page === "Live Flows" ? (
+            ) : page === "Flow Records" ? (
               <Panel
                 title="Flow telemetry"
                 meta={`${flows.length} matching flows`}
@@ -897,7 +866,7 @@ export default function App() {
               <TrafficAnalytics
                 data={filtered}
                 onSource={(ip) => {
-                  navigate("Live Flows");
+                  navigate("Flow Records");
                   setQuery(ip);
                 }}
               />
@@ -912,9 +881,7 @@ export default function App() {
                     <div>
                       <dt>Mode</dt>
                       <dd>
-                        {demo
-                          ? "Demo"
-                          : data!.model.model_version.includes("stub")
+                        {data!.model.model_version.includes("stub")
                             ? "Heuristic fallback"
                             : "Model artifact"}
                       </dd>
@@ -1023,53 +990,9 @@ export default function App() {
                       onChange={(e) => setAutoRefresh(e.target.checked)}
                     />
                   </div>
-                  <div className="setting-row">
-                    <div>
-                      <strong>Demo workspace</strong>
-                      <small>Sample data</small>
-                    </div>
-                    <input
-                      aria-label="Demo workspace"
-                      disabled={busy}
-                      role="switch"
-                      type="checkbox"
-                      checked={demo}
-                      onChange={(e) => changeMode(e.target.checked)}
-                    />
-                  </div>
-                </Panel>
-                <Panel title="Display">
-                  <dl className="facts">
-                    <div>
-                      <dt>Theme</dt>
-                      <dd>Dark</dd>
-                    </div>
-                    <div>
-                      <dt>Time zone</dt>
-                      <dd>
-                        {Intl.DateTimeFormat().resolvedOptions().timeZone}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Loaded feed limit</dt>
-                      <dd>500 records</dd>
-                    </div>
-                  </dl>
                 </Panel>
               </div>
             )}
-            <footer>
-              <span>
-                <Shield size={13} />
-                NetSentry AI <span> / </span> Security operations workspace
-              </span>
-              <button onClick={() => navigate("Model")}>
-                Detection & evidence <CircleHelp size={13} />
-              </button>
-              <button onClick={() => navigate("Privacy Policy")}>
-                Privacy policy
-              </button>
-            </footer>
           </main>
         </div>
         <Drawer
@@ -1213,19 +1136,20 @@ function PrivacyPolicy() {
           <section>
             <h3>Network and investigation data</h3>
             <p>
-              Flow records, anomaly events, evidence, and reports are handled by
-              the backend configured for this installation. The deployment
-              operator controls its database, access, and retention. Optional
-              language-model or threat-intelligence integrations may send data
-              to the providers configured on that backend.
+              Flow records, anomaly events, evidence, and reports are handled
+              by the backend
+              configured for this installation. The deployment operator
+              controls its database, access, and retention. Optional
+              An optional language-model provider configured on the backend
+              may receive investigation data to generate report text.
             </p>
           </section>
           <section>
-            <h3>Demo and exports</h3>
+            <h3>Data exports</h3>
             <p>
-              Demo records are generated in the browser for the current session
-              and are not submitted to the backend. JSON exports are created
-              only when an analyst requests a download.
+              JSON exports are created only when an analyst requests a
+              download. Imported flow records are submitted to the configured
+              backend for scoring and storage.
             </p>
           </section>
           <section>

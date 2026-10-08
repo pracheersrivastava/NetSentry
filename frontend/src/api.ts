@@ -30,6 +30,32 @@ export async function snapshot(): Promise<Snapshot> {
   ]);
   return { flows, anomalies, investigations, model, health };
 }
+export type FlowImport = {
+  flow_id?: string;
+  timestamp?: string | null;
+  src_ip: string;
+  dst_ip: string;
+  src_port: number;
+  dst_port: number;
+  protocol?: string;
+  duration?: number;
+  orig_bytes?: number;
+  resp_bytes?: number;
+  orig_pkts?: number;
+  resp_pkts?: number;
+};
+export type IngestResult = {
+  flow_id: string;
+  anomaly_score: number;
+  prediction: string;
+  event_id: string | null;
+};
+export const importFlows = (flows: FlowImport[]) =>
+  request<IngestResult[]>("/flows/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(flows),
+  });
 export const investigate = (id: string) =>
   request<Investigation>(`/investigations/${encodeURIComponent(id)}`, {
     method: "POST",

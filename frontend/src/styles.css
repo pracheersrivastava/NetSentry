@@ -240,39 +240,17 @@ code {
   background: var(--rose);
   box-shadow: none;
 }
-.analyst {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-  width: 100%;
-  border-top: 1px solid var(--border);
-  padding: 17px 3px 4px;
-  margin-top: 12px;
-  font-size: 11px;
-}
-.analyst > span,
-.top-avatar {
-  background: #303b37;
-  color: #cad9d1;
-  border: 1px solid #46564c;
-  border-radius: 50%;
-  width: 31px;
-  height: 31px;
-  display: grid;
-  place-items: center;
-  font-size: 10px;
-}
-.analyst small {
-  display: block;
-  color: #7b8882;
-  font-size: 10px;
-  margin-top: 3px;
-}
-.analyst > svg {
-  margin-left: auto;
-  color: #849389;
-}
+.flow-import-layout { display: grid; gap: 16px; }
+.flow-upload { display: flex; align-items: center; gap: 16px; padding: 22px 4px; }
+.flow-upload > svg { color: var(--teal); flex: 0 0 auto; }
+.flow-upload > div { flex: 1; }
+.flow-upload p { color: var(--muted); line-height: 1.6; margin: 6px 0 0; max-width: 760px; }
+.flow-import-button { display: inline-flex; align-items: center; justify-content: center; background: var(--teal); color: #101915; padding: 10px 14px; border-radius: 3px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.flow-import-button input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.flow-import-limitation { color: var(--muted); font-size: 11px; margin: 0; }
+.import-result { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 14px 4px 2px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.import-result strong { color: var(--text); }
+.warning-text { color: var(--amber); }
 .main-shell {
   margin-left: 226px;
 }
@@ -322,9 +300,6 @@ code {
   height: 5px;
   background: currentColor;
   border-radius: 50%;
-}
-.demo-label {
-  color: var(--amber);
 }
 .icon-button {
   position: relative;
@@ -828,7 +803,7 @@ tbody tr:hover {
   margin-top: 10px;
 }
 .error-banner,
-.demo-banner {
+.notice-banner {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -846,15 +821,14 @@ tbody tr:hover {
   color: #edb1b4;
 }
 .error-banner > span,
-.demo-banner > span {
+.notice-banner > span {
   flex: 1;
 }
 .error-banner > svg,
-.demo-banner > svg {
+.notice-banner > svg {
   flex-shrink: 0;
 }
-.error-banner button,
-.demo-banner button {
+.error-banner button {
   color: inherit;
   display: flex;
   align-items: center;
@@ -1949,18 +1923,12 @@ pre {
     margin-left: 35px;
   }
   .error-banner,
-  .demo-banner {
+  .notice-banner {
     flex-wrap: wrap;
-    font-size: 10px;
-  }
-  .demo-banner button {
     font-size: 10px;
   }
   .error-banner > span {
     min-width: 65%;
-  }
-  .demo-banner > span {
-    line-height: 1.6;
   }
   footer {
     font-size: 8px;
@@ -2074,7 +2042,7 @@ tbody tr:hover { background: #353535; }
 .pipeline-icon { border-radius: 3px; }
 .threshold-note { border-color: #393939; }
 .status-dot { background: #24a148; box-shadow: none; }
-.live-label:not(.demo-label) { color: #42be65; }
+.live-label { color: #42be65; }
 @media (max-width: 1000px) {
   .command-strip { flex-wrap: wrap; }
   .command-strip .metric { min-width: 25%; }
